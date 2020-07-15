@@ -29,8 +29,15 @@ import logging
 from pathlib import Path
 from distutils.spawn import find_executable
 from colorama import Fore
-import yaml
 import platform
+import yaml
+try:
+    # Use the C LibYAML parser if available, rather than the Python parser.
+    # It's much faster.
+    from yaml import CSafeLoader as SafeLoader
+    from yaml import CDumper as Dumper
+except ImportError:
+    from yaml import SafeLoader, Dumper
 
 try:
     import serial
@@ -330,6 +337,7 @@ class BinaryHandler(Handler):
         self.valgrind = False
         self.lsan = False
         self.asan = False
+        self.ubsan = False
         self.coverage = False
 
     def try_kill_process_by_pid(self):
@@ -406,6 +414,10 @@ class BinaryHandler(Handler):
                                   env.get("ASAN_OPTIONS", "")
             if not self.lsan:
                 env["ASAN_OPTIONS"] += "detect_leaks=0"
+
+        if self.ubsan:
+            env["UBSAN_OPTIONS"] = "log_path=stdout:halt_on_error=1:" + \
+                                  env.get("UBSAN_OPTIONS", "")
 
         with subprocess.Popen(command, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, cwd=self.build_dir, env=env) as proc:
@@ -586,6 +598,10 @@ class DeviceHandler(Handler):
                 command.append("--snr")
                 command.append(board_id)
             elif runner == "openocd" and product == "STM32 STLink":
+                command.append('--')
+                command.append("--cmd-pre-init")
+                command.append("hla_serial %s" % (board_id))
+            elif runner == "openocd" and product == "STLINK-V3":
                 command.append('--')
                 command.append("--cmd-pre-init")
                 command.append("hla_serial %s" % (board_id))
@@ -810,7 +826,7 @@ class QEMUHandler(Handler):
                 # if we have registered a fail make sure the state is not
                 # overridden by a false success message coming from the
                 # testsuite
-                if out_state != 'failed':
+                if out_state not in ['failed', 'unexpected eof', 'unexpected byte']:
                     out_state = harness.state
 
                 # if we get some state, that means test is doing well, we reset
@@ -824,6 +840,8 @@ class QEMUHandler(Handler):
                         timeout_time = time.time() + 30
                     else:
                         timeout_time = time.time() + 2
+            else:
+                logger.debug("got nothing from harness")
             line = ""
 
         handler.record(harness)
@@ -831,11 +849,16 @@ class QEMUHandler(Handler):
         handler_time = time.time() - start_time
         logger.debug("QEMU complete (%s) after %f seconds" %
                      (out_state, handler_time))
+
         handler.set_state(out_state, handler_time)
+
         if out_state == "timeout":
             handler.instance.reason = "Timeout"
         elif out_state == "failed":
             handler.instance.reason = "Failed"
+        elif out_state in ['unexpected eof', 'unexpected byte']:
+            handler.set_state("failed", handler_time)
+            handler.instance.reason = out_state
 
         log_out_fp.close()
         out_fp.close()
@@ -907,10 +930,14 @@ class QEMUHandler(Handler):
                     proc.kill()
                     self.returncode = proc.returncode
             else:
+                logger.debug(f"No timeout, return code from qemu: {self.returncode}")
                 self.returncode = proc.returncode
 
             if os.path.exists(self.pid_fn):
                 os.unlink(self.pid_fn)
+
+
+        logger.debug(f"return code from qemu: {self.returncode}")
 
         if self.returncode != 0:
             self.set_state("failed", 0)
@@ -1447,9 +1474,6 @@ Tests should reference the category and subsystem with a dot as a separator.
                              'offset': 0}
 
             with contextlib.closing(mmap.mmap(**mmap_args)) as main_c:
-                # contextlib makes pylint think main_c isn't subscriptable
-                # pylint: disable=unsubscriptable-object
-
                 suite_regex_match = suite_regex.search(main_c)
                 if not suite_regex_match:
                     # can't find ztest_test_suite, maybe a client, because
@@ -1604,7 +1628,7 @@ class TestInstance(DisablePyTestCollectionMixin):
         self.run = not self.build_only
         return
 
-    def create_overlay(self, platform, enable_asan=False, enable_coverage=False, coverage_platform=[]):
+    def create_overlay(self, platform, enable_asan=False, enable_ubsan=False, enable_coverage=False, coverage_platform=[]):
         # Create this in a "sanitycheck/" subdirectory otherwise this
         # will pass this overlay to kconfig.py *twice* and kconfig.cmake
         # will silently give that second time precedence over any
@@ -1627,6 +1651,10 @@ class TestInstance(DisablePyTestCollectionMixin):
             if enable_asan:
                 if platform.type == "native":
                     content = content + "\nCONFIG_ASAN=y"
+
+            if enable_ubsan:
+                if platform.type == "native":
+                    content = content + "\nCONFIG_UBSAN=y"
 
             f.write(content)
             return content
@@ -1725,7 +1753,7 @@ class CMake():
                     self.instance.status = "skipped"
                     self.instance.reason = "{} overflow".format(res[0])
                 else:
-                    self.instance.status = "failed"
+                    self.instance.status = "error"
                     self.instance.reason = "Build failure"
 
             results = {
@@ -1783,7 +1811,7 @@ class CMake():
             results = {'msg': msg, 'filter': filter_results}
 
         else:
-            self.instance.status = "failed"
+            self.instance.status = "error"
             self.instance.reason = "Cmake build failure"
             logger.error("Cmake build failure: %s for %s" % (self.source_dir, self.platform.name))
             results = {"returncode": p.returncode}
@@ -1877,6 +1905,7 @@ class ProjectBuilder(FilterBuilder):
 
         self.lsan = kwargs.get('lsan', False)
         self.asan = kwargs.get('asan', False)
+        self.ubsan = kwargs.get('ubsan', False)
         self.valgrind = kwargs.get('valgrind', False)
         self.extra_args = kwargs.get('extra_args', [])
         self.device_testing = kwargs.get('device_testing', False)
@@ -1943,6 +1972,7 @@ class ProjectBuilder(FilterBuilder):
             handler.asan = self.asan
             handler.valgrind = self.valgrind
             handler.lsan = self.lsan
+            handler.ubsan = self.ubsan
             handler.coverage = self.coverage
 
             handler.binary = os.path.join(instance.build_dir, "zephyr", "zephyr.exe")
@@ -1973,7 +2003,7 @@ class ProjectBuilder(FilterBuilder):
         # The build process, call cmake and build with configured generator
         if op == "cmake":
             results = self.cmake()
-            if self.instance.status == "failed":
+            if self.instance.status in ["failed", "error"]:
                 pipeline.put({"op": "report", "test": self.instance})
             elif self.cmake_only:
                 pipeline.put({"op": "report", "test": self.instance})
@@ -1993,7 +2023,7 @@ class ProjectBuilder(FilterBuilder):
             results = self.build()
 
             if not results:
-                self.instance.status = "failed"
+                self.instance.status = "error"
                 self.instance.reason = "Build Failure"
                 pipeline.put({"op": "report", "test": self.instance})
             else:
@@ -2009,6 +2039,7 @@ class ProjectBuilder(FilterBuilder):
             logger.debug("run test: %s" % self.instance.name)
             self.run()
             self.instance.status, _ = self.instance.handler.get_state()
+            logger.debug(f"run status: {self.instance.status}")
             pipeline.put({
                 "op": "report",
                 "test": self.instance,
@@ -2060,7 +2091,9 @@ class ProjectBuilder(FilterBuilder):
         self.suite.total_done += 1
         instance = self.instance
 
-        if instance.status in ["failed", "timeout"]:
+        if instance.status in ["error", "failed", "timeout"]:
+            if instance.status == "error":
+                self.suite.total_errors += 1
             self.suite.total_failed += 1
             if self.verbose:
                 status = Fore.RED + "FAILED " + Fore.RESET + instance.reason
@@ -2078,8 +2111,12 @@ class ProjectBuilder(FilterBuilder):
         elif instance.status == "skipped":
             self.suite.total_skipped += 1
             status = Fore.YELLOW + "SKIPPED" + Fore.RESET
-        else:
+        elif instance.status == "passed":
+            self.suite.total_passed += 1
             status = Fore.GREEN + "PASSED" + Fore.RESET
+        else:
+            logger.debug(f"Unknown status = {instance.status}")
+            status = Fore.YELLOW + "UNKNOWN" + Fore.RESET
 
         if self.verbose:
             if self.cmake_only:
@@ -2099,7 +2136,7 @@ class ProjectBuilder(FilterBuilder):
                 self.suite.total_done, total_tests_width, self.suite.total_tests, instance.platform.name,
                 instance.testcase.name, status, more_info))
 
-            if instance.status in ["failed", "timeout"]:
+            if instance.status in ["error", "failed", "timeout"]:
                 self.log_info_file(self.inline_logs)
         else:
             sys.stdout.write("\rINFO    - Total complete: %s%4d/%4d%s  %2d%%  skipped: %s%4d%s, failed: %s%4d%s" % (
@@ -2145,7 +2182,7 @@ class ProjectBuilder(FilterBuilder):
         overlays = extract_overlays(args)
 
         if (self.testcase.extra_configs or self.coverage or
-                self.asan):
+                self.asan or self.ubsan):
             overlays.append(os.path.join(instance.build_dir,
                                          "sanitycheck", "testcase_extra.conf"))
 
@@ -2251,6 +2288,7 @@ class TestSuite(DisablePyTestCollectionMixin):
         self.device_testing = False
         self.fixtures = []
         self.enable_coverage = False
+        self.enable_ubsan = False
         self.enable_lsan = False
         self.enable_asan = False
         self.enable_valgrind = False
@@ -2277,6 +2315,8 @@ class TestSuite(DisablePyTestCollectionMixin):
         self.total_done = 0  # tests completed
         self.total_failed = 0
         self.total_skipped = 0
+        self.total_passed = 0
+        self.total_errors = 0
 
         self.total_platforms = 0
         self.start_time = 0
@@ -2385,7 +2425,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                 run += 1
 
         if self.total_tests and self.total_tests != self.total_skipped:
-            pass_rate = (float(self.total_tests - self.total_failed - self.total_skipped) / float(
+            pass_rate = (float(self.total_passed) / float(
                 self.total_tests - self.total_skipped))
         else:
             pass_rate = 0
@@ -2393,7 +2433,7 @@ class TestSuite(DisablePyTestCollectionMixin):
         logger.info(
             "{}{} of {}{} tests passed ({:.2%}), {}{}{} failed, {} skipped with {}{}{} warnings in {:.2f} seconds".format(
                 Fore.RED if failed else Fore.GREEN,
-                self.total_tests - self.total_failed - self.total_skipped,
+                self.total_passed,
                 self.total_tests - self.total_skipped,
                 Fore.RESET,
                 pass_rate,
@@ -2597,7 +2637,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                         self.device_testing,
                         self.fixtures
                     )
-                    instance.create_overlay(platform, self.enable_asan, self.enable_coverage, self.coverage_platform)
+                    instance.create_overlay(platform, self.enable_asan, self.enable_ubsan, self.enable_coverage, self.coverage_platform)
                     instance_list.append(instance)
                 self.add_instances(instance_list)
 
@@ -2658,6 +2698,8 @@ class TestSuite(DisablePyTestCollectionMixin):
                     self.device_testing,
                     self.fixtures
                 )
+                for t in tc.cases:
+                    instance.results[t] = None
 
                 if device_testing_filter:
                     for h in self.connected_hardware:
@@ -2790,7 +2832,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                 self.add_instances(instance_list)
 
         for _, case in self.instances.items():
-            case.create_overlay(case.platform, self.enable_asan, self.enable_coverage, self.coverage_platform)
+            case.create_overlay(case.platform, self.enable_asan, self.enable_ubsan, self.enable_coverage, self.coverage_platform)
 
         self.discards = discards
         self.selected_platforms = set(p.platform.name for p in self.instances.values())
@@ -2807,15 +2849,16 @@ class TestSuite(DisablePyTestCollectionMixin):
                 if instance.run:
                     pipeline.put({"op": "run", "test": instance, "status": "built"})
             else:
-                if instance.status not in ['passed', 'skipped']:
+                if instance.status not in ['passed', 'skipped', 'error']:
                     instance.status = None
                     pipeline.put({"op": "cmake", "test": instance})
 
         return "DONE FEEDING"
 
     def execute(self):
+
         def calc_one_elf_size(instance):
-            if instance.status not in ["failed", "skipped"]:
+            if instance.status not in ["error", "failed", "skipped"]:
                 if instance.platform.type != "native":
                     size_calc = instance.calculate_sizes()
                     instance.metrics["ram_size"] = size_calc.get_ram_size()
@@ -2851,6 +2894,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                                         test,
                                         lsan=self.enable_lsan,
                                         asan=self.enable_asan,
+                                        ubsan=self.enable_ubsan,
                                         coverage=self.enable_coverage,
                                         extra_args=self.extra_args,
                                         device_testing=self.device_testing,
@@ -2904,7 +2948,7 @@ class TestSuite(DisablePyTestCollectionMixin):
     def discard_report(self, filename):
 
         try:
-            if self.discards is None:
+            if not self.discards:
                 raise SanityRuntimeError("apply_filters() hasn't been run!")
         except Exception as e:
             logger.error(str(e))
@@ -2943,7 +2987,6 @@ class TestSuite(DisablePyTestCollectionMixin):
 
 
     def xunit_report(self, filename, platform=None, full_report=False, append=False):
-
         total = 0
         if platform:
             selected = [platform]
@@ -2978,7 +3021,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                         else:
                             fails += 1
                 else:
-                    if instance.status in ["failed", "timeout"]:
+                    if instance.status in ["error", "failed", "timeout"]:
                         if instance.reason in ['build_error', 'handler_crash']:
                             errors += 1
                         else:
@@ -2999,10 +3042,20 @@ class TestSuite(DisablePyTestCollectionMixin):
             # When we re-run the tests, we re-use the results and update only with
             # the newly run tests.
             if os.path.exists(filename) and append:
-                eleTestsuite = eleTestsuites.findall(f'testsuite/[@name="{p}"]')[0]
-                eleTestsuite.attrib['failures'] = "%d" % fails
-                eleTestsuite.attrib['errors'] = "%d" % errors
-                eleTestsuite.attrib['skip'] = "%d" % skips
+                ts = eleTestsuites.findall(f'testsuite/[@name="{p}"]')
+                if ts:
+                    eleTestsuite = ts[0]
+                    eleTestsuite.attrib['failures'] = "%d" % fails
+                    eleTestsuite.attrib['errors'] = "%d" % errors
+                    eleTestsuite.attrib['skip'] = "%d" % skips
+                else:
+                    logger.info(f"Did not find any existing results for {p}")
+                    eleTestsuite = ET.SubElement(eleTestsuites, 'testsuite',
+                                name=run, time="%f" % duration,
+                                tests="%d" % (total),
+                                failures="%d" % fails,
+                                errors="%d" % (errors), skip="%s" % (skips))
+
             else:
                 eleTestsuite = ET.SubElement(eleTestsuites, 'testsuite',
                                              name=run, time="%f" % duration,
@@ -3039,6 +3092,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                                     type="failure",
                                     message="failed")
                             else:
+
                                 el = ET.SubElement(
                                     eleTestcase,
                                     'error',
@@ -3048,28 +3102,37 @@ class TestSuite(DisablePyTestCollectionMixin):
                             log_file = os.path.join(p, "handler.log")
                             el.text = self.process_log(log_file)
 
+                        elif instance.results[k] == 'PASS':
+                            pass
                         elif instance.results[k] == 'SKIP':
+                            el = ET.SubElement(eleTestcase, 'skipped', type="skipped", message="Skipped")
+                        else:
                             el = ET.SubElement(
                                 eleTestcase,
-                                'skipped',
-                                type="skipped",
-                                message="Skipped")
+                                'error',
+                                type="error",
+                                message=f"{instance.reason}")
                 else:
                     if platform:
                         classname = ".".join(instance.testcase.name.split(".")[:2])
                     else:
                         classname = p + ":" + ".".join(instance.testcase.name.split(".")[:2])
 
+                    # remove testcases that are being re-run from exiting reports
+                    for tc in eleTestsuite.findall(f'testcase/[@classname="{classname}"]'):
+                        eleTestsuite.remove(tc)
+
                     eleTestcase = ET.SubElement(eleTestsuite, 'testcase',
                         classname=classname,
                         name="%s" % (instance.testcase.name),
                         time="%f" % handler_time)
-                    if instance.status in ["failed", "timeout"]:
+                    if instance.status in ["error", "failed", "timeout"]:
                         failure = ET.SubElement(
                             eleTestcase,
                             'failure',
                             type="failure",
                             message=instance.reason)
+
                         p = ("%s/%s/%s" % (self.outdir, instance.platform.name, instance.testcase.name))
                         bl = os.path.join(p, "build.log")
                         hl = os.path.join(p, "handler.log")
@@ -3105,7 +3168,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                            "handler": instance.platform.simulation}
 
                 rowdict["status"] = instance.status
-                if instance.status not in ["failed", "timeout"]:
+                if instance.status not in ["error", "failed", "timeout"]:
                     if instance.handler:
                         rowdict["handler_time"] = instance.metrics.get("handler_time", 0)
                     ram_size = instance.metrics.get("ram_size", 0)
@@ -3340,7 +3403,7 @@ class HardwareMap:
             'J-Link OB'
         ],
         'openocd': [
-            'STM32 STLink', '^XDS110.*'
+            'STM32 STLink', '^XDS110.*', 'STLINK-V3'
         ],
         'dediprog': [
             'TTL232R-3V3',
@@ -3428,15 +3491,18 @@ class HardwareMap:
         # use existing map
         if os.path.exists(hwm_file):
             with open(hwm_file, 'r') as yaml_file:
-                hwm = yaml.load(yaml_file, Loader=yaml.FullLoader)
+                hwm = yaml.load(yaml_file, Loader=SafeLoader)
+                hwm.sort(key=lambda x: x['serial'] or '')
+
                 # disconnect everything
                 for h in hwm:
                     h['connected'] = False
                     h['serial'] = None
 
+                self.detected.sort(key=lambda x: x['serial'] or '')
                 for d in self.detected:
                     for h in hwm:
-                        if d['id'] == h['id'] and d['product'] == h['product']:
+                        if d['id'] == h['id'] and d['product'] == h['product'] and not h['connected'] and not d.get('match', False):
                             h['connected'] = True
                             h['serial'] = d['serial']
                             d['match'] = True
@@ -3448,12 +3514,12 @@ class HardwareMap:
                 self.dump(hwm)
 
             with open(hwm_file, 'w') as yaml_file:
-                yaml.dump(hwm, yaml_file, default_flow_style=False)
+                yaml.dump(hwm, yaml_file, Dumper=Dumper, default_flow_style=False)
 
         else:
             # create new file
             with open(hwm_file, 'w') as yaml_file:
-                yaml.dump(self.detected, yaml_file, default_flow_style=False)
+                yaml.dump(self.detected, yaml_file, Dumper=Dumper, default_flow_style=False)
             logger.info("Detected devices:")
             self.dump(self.detected)
 
