@@ -6,7 +6,7 @@
 
 /**
  * @file
- * @brief ARM Cortex-M and Cortex-R interrupt management
+ * @brief ARM Cortex-A, Cortex-M and Cortex-R interrupt management
  *
  *
  * Interrupt management: enabling/disabling and dynamic ISR
@@ -165,7 +165,8 @@ void z_irq_spurious(void *unused)
 void _arch_isr_direct_pm(void)
 {
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE) \
-	|| defined(CONFIG_ARMV7_R)
+	|| defined(CONFIG_ARMV7_R) \
+	|| defined(CONFIG_ARMV7_A)
 	unsigned int key;
 
 	/* irq_lock() does what we wan for this CPU */
@@ -188,7 +189,8 @@ void _arch_isr_direct_pm(void)
 	}
 
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE) \
-	|| defined(CONFIG_ARMV7_R)
+	|| defined(CONFIG_ARMV7_R) \
+	|| defined(CONFIG_ARMV7_A)
 	irq_unlock(key);
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	__asm__ volatile("cpsie i" : : : "memory");

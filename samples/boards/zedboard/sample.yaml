@@ -1,0 +1,9 @@
+sample:
+  description: Zedboard Demo
+  name: Zedboard:Demo
+common:
+    tags: introduction
+tests:
+  sample.board.zedboard:
+    platform_whitelist: zedboard
+    tags: introduction

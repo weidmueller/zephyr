@@ -37,6 +37,7 @@ struct _callee_saved {
 typedef struct _callee_saved _callee_saved_t;
 
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+#ifndef CONFIG_ARMV7_A_FP_VFPV3_D16
 struct _preempt_float {
 	float  s16;
 	float  s17;
@@ -55,7 +56,45 @@ struct _preempt_float {
 	float  s30;
 	float  s31;
 };
-#endif
+#else /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+struct _preempt_float {
+	double   d00;
+	double   d01;
+	double   d02;
+	double   d03;
+	double   d04;
+	double   d05;
+	double   d06;
+	double   d07;
+	double   d08;
+	double   d09;
+	double   d10;
+	double   d11;
+	double   d12;
+	double   d13;
+	double   d14;
+	double   d15;
+	double   d16;
+	double   d17;
+	double   d18;
+	double   d19;
+	double   d20;
+	double   d21;
+	double   d22;
+	double   d23;
+	double   d24;
+	double   d25;
+	double   d26;
+	double   d27;
+	double   d28;
+	double   d29;
+	double   d30;
+	double   d31;
+	uint32_t fpscr;
+	uint32_t fpexc;
+};
+#endif /* !CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 struct _thread_arch {
 
@@ -83,6 +122,9 @@ struct _thread_arch {
 };
 
 typedef struct _thread_arch _thread_arch_t;
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+typedef struct _preempt_float _preempt_float_t;
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 #endif /* _ASMLANGUAGE */
 

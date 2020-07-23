@@ -24,6 +24,22 @@ static void arm_arch_timer_compare_isr(void *arg)
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
+	#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
+
+	/* Workaround required for Cortex-A9 MPCore errata 740657
+	 * comp. ARM Cortex-A9 processors Software Developers Errata Notice,
+	 * ARM document ID032315. */
+
+	if (!arm_arch_timer_get_int_status()) {
+		/* If the event flag is not set, this is a spurious interrupt.
+		 * DO NOT modify the compare register's value, DO NOT announce
+		 * elapsed ticks! */
+		k_spin_unlock(&lock, key);
+		return;
+	}
+
+	#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
+
 	uint64_t curr_cycle = arm_arch_timer_count();
 	uint32_t delta_ticks = (uint32_t)((curr_cycle - last_cycle) / CYC_PER_TICK);
 
@@ -37,6 +53,18 @@ static void arm_arch_timer_compare_isr(void *arg)
 		}
 		arm_arch_timer_set_compare(next_cycle);
 	}
+	#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
+	else {
+		/* In tickless mode, the compare register is normally not updated from
+		* within the ISR. Yet, to work around the timer's errata, a new value
+		* *must* be written while the interrupt is being processed, the event
+		* flag *must* be cleared after the compare register is updated. */
+		arm_arch_timer_set_compare(0xFFFFFFFFFFFFFFFFLLU);
+	}
+	
+	arm_arch_timer_clear_int_status();
+
+	#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
 
 	k_spin_unlock(&lock, key);
 

@@ -9,7 +9,8 @@
  * @brief Private kernel definitions (ARM)
  *
  * This file contains private kernel structures definitions and various
- * other definitions for the ARM Cortex-A/R/M processor architecture family.
+ * other definitions for the ARM Cortex-A, Cortex-M and Cortex-R processor
+ * architecture families.
  *
  * This file is also included by assembly language files which must #define
  * _ASMLANGUAGE before including this header file.  Note that kernel
@@ -27,10 +28,11 @@
 #if defined(CONFIG_CPU_CORTEX_M)
 #include <aarch32/cortex_m/stack.h>
 #include <aarch32/cortex_m/exc.h>
-#elif defined(CONFIG_CPU_CORTEX_R)
-#include <aarch32/cortex_r/stack.h>
-#include <aarch32/cortex_r/exc.h>
-#elif defined(CONFIG_CPU_CORTEX_A)
+#elif defined(CONFIG_CPU_CORTEX_R) \
+	|| (defined(CONFIG_CPU_CORTEX_A) && !defined(CONFIG_ARM64))
+#include <aarch32/cortex_a_r/stack.h>
+#include <aarch32/cortex_a_r/exc.h>
+#elif defined(CONFIG_CPU_CORTEX_A) && defined(CONFIG_ARM64)
 #include <aarch64/exc.h>
 #endif
 

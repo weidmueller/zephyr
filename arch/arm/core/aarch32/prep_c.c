@@ -20,7 +20,7 @@
 #include <kernel_internal.h>
 #include <linker/linker-defs.h>
 
-#if defined(CONFIG_ARMV7_R)
+#if defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
 #include <aarch32/cortex_a_r/stack.h>
 #endif
 
@@ -77,7 +77,7 @@ void __weak relocate_vector_table(void)
 
 #endif /* CONFIG_CPU_CORTEX_M_HAS_VTOR */
 
-#if defined(CONFIG_CPU_HAS_FPU)
+#if defined(CONFIG_CPU_HAS_FPU) && !defined(CONFIG_ARMV7_A_FP_VFPV3_D16)
 static inline void z_arm_floating_point_init(void)
 {
 	/*
@@ -159,7 +159,72 @@ static inline void z_arm_floating_point_init(void)
 	__set_CONTROL(__get_CONTROL() & (~(CONTROL_FPCA_Msk)));
 #endif
 }
-#endif /* CONFIG_CPU_HAS_FPU */
+#elif defined(CONFIG_CPU_HAS_FPU) && defined(CONFIG_ARMV7_A_FP_VFPV3_D16)
+static inline void z_arm_floating_point_init(void)
+{
+	#ifdef CONFIG_FPU
+
+	uint32_t reg_val = 0;
+
+	/*
+	 * TODO: use CMSIS for control register access as seen above for 
+	 * Cortex-M. 
+	 * TODO: configure NSACR once non-secure mode is supported.
+	 */
+
+	/*
+	 * CPACR : Coprocessor Access Control Register -> CP15 1/0/2
+	 * comp. ARM Architecture Reference Manual, ARMv7-A and ARMv7-R edition, 
+	 * chap. B4.1.40.
+	 *
+	 * Must be accessed at >= PL1!
+	 * [23..22] = CP11 access control bits,
+	 * [21..20] = CP10 access control bits.
+	 * 11b = Full access as defined for the respective CP,
+	 * 10b = UNDEFINED,
+	 * 01b = Access at PL1 only,
+	 * 00b = No access.
+	 */
+
+	__asm__ __volatile__ ("mrc p15,0,%0,c1,c0,2" : "=r"(reg_val));
+	reg_val |= ((3 << 22) | (3 << 20)); /* Enable full access to CP10, CP11 */
+	__asm__ __volatile__ ("mcr p15,0,%0,c1,c0,2" : : "r"(reg_val));
+	__asm__ __volatile__ ("isb");
+
+	/*
+	 * FPEXC: Floating-Point Exception Control register
+	 * comp. ARM Architecture Reference Manual, ARMv7-A and ARMv7-R edition, 
+	 * chap. B6.1.38 or Cortex-A9 Floating-Point Unit Technical Reference 
+	 * Manual, chap. 2.5.3.
+	 *
+	 * Must be accessed at >= PL1!
+	 * [31] EX bit = determines which registers comprise the current state
+	 *               of the FPU. The effects of setting this bit to 1 are
+	 *               subarchitecture defined. If EX=0, the following registers
+	 *               contain the complete current state information of the FPU
+	 *               and must therefore be saved during a context switch:
+	 *               * D0-D15
+	 *               * D16-D31 if implemented
+	 *               * FPSCR
+	 *               * FPEXC.
+	 * [30] EN bit = Advanced SIMD/Floating Point Extensions enable bit.
+	 * [29..00]    = Subarchitecture defined -> not relevant here.
+	 */
+
+	__asm__ __volatile__ ("vmrs %0, fpexc" : "=r"(reg_val));
+	reg_val |= (1 << 30); /* Set the EN bit */
+	__asm__ __volatile__ ("vmsr fpexc,%0" : : "r"(reg_val));
+	__asm__ __volatile__ ("isb");
+
+	/*
+	 * The contents of the FPSCR register are written:
+	 * - within arch_switch_to_main_thread() if register sharing is disabled,
+	 * - within each call of arch_new_thread() if register sharing is enabled.
+	 */
+
+	#endif /* CONFIG_FPU */
+}
+#endif /* CONFIG_CPU_HAS_FPU && !CONFIG_ARMV7_A_FP_VFPV3_D16 */
 
 extern FUNC_NORETURN void z_cstart(void);
 /**
@@ -178,7 +243,8 @@ void z_arm_prep_c(void)
 #endif
 	z_bss_zero();
 	z_data_copy();
-#if defined(CONFIG_ARMV7_R) && defined(CONFIG_INIT_STACKS)
+#if (defined(CONFIG_ARMV7_R) && defined(CONFIG_INIT_STACKS)) \
+	|| (defined(CONFIG_ARMV7_A) && defined(CONFIG_INIT_STACKS))
 	z_arm_init_stacks();
 #endif
 	z_arm_interrupt_init();

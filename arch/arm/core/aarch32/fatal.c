@@ -24,6 +24,20 @@ static void esf_dump(const z_arch_esf_t *esf)
 		esf->basic.a4, esf->basic.ip, esf->basic.lr);
 	LOG_ERR(" xpsr:  0x%08x", esf->basic.xpsr);
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+	#ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+	LOG_ERR("fpexc:  0x%08x", esf->fpexc);
+	LOG_ERR("fpscr:  0x%08x", esf->fpscr);
+
+	uint32_t *d_regs_as_s = (uint32_t*)&(esf->d[0]);
+	for (int i = 0; i < 32; i++) {
+		LOG_ERR("d[%2d]: 0x%08x%08x -> s[%2d]: 0x%08x s[%2d]: 0x%08x", 
+		i, 
+		d_regs_as_s[(i * 2)], 
+		d_regs_as_s[(i * 2) + 1],
+		(i * 2), d_regs_as_s[(i * 2)],
+		((i * 2) + 1), d_regs_as_s[(i * 2) + 1]);
+	}
+	#else /* !CONFIG_ARMV7_A_FP_VFPV3_D16 */
 	for (int i = 0; i < 16; i += 4) {
 		LOG_ERR("s[%2d]:  0x%08x  s[%2d]:  0x%08x"
 			"  s[%2d]:  0x%08x  s[%2d]:  0x%08x",
@@ -33,7 +47,8 @@ static void esf_dump(const z_arch_esf_t *esf)
 			i + 3, (uint32_t)esf->s[i + 3]);
 	}
 	LOG_ERR("fpscr:  0x%08x", esf->fpscr);
-#endif
+	#endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 	LOG_ERR("Faulting instruction address (r15/pc): 0x%08x",
 		esf->basic.pc);
 }

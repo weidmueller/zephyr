@@ -1,0 +1,11 @@
+#
+# Kconfig - Xilinx ZCU102 UltraScale Eval board
+#
+# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+config BOARD_ZCU102
+    bool "Xilinx ZCU102"
+    depends on SOC_XILINX_ZYNQMP_RPU

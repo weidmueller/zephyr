@@ -1,0 +1,32 @@
+# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+# SPDX-License-Identifier: Apache-2.0
+
+description: Xilinx AXI GPIO node
+
+compatible: "xlnx,axi-gpio"
+
+include: [gpio-controller.yaml, base.yaml]
+
+properties:
+    reg:
+      required: true
+
+    label:
+      required: true
+
+    interrupts:
+      required: true
+
+    polling:
+      type: boolean
+      required: false
+      description: |
+        Indicates that the current instance doesn't have interrupt
+        functionality activated in its respective IP core settings.
+
+    "#gpio-cells":
+      const: 2
+
+gpio-cells:
+  - pin
+  - flags

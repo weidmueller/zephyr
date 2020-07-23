@@ -1,0 +1,84 @@
+#
+# Kconfig - AVNET/Digilent Zedboard
+#
+# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if BOARD_ZEDBOARD
+
+config BOARD
+	default "zedboard"
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	int
+	default 333333333
+
+config SYS_CLOCK_TICKS_PER_SEC
+	default 1000
+
+if SERIAL
+
+	config SERIAL_HAS_DRIVER
+	default y
+
+	config UART_INTERRUPT_DRIVEN
+	default n
+
+	config UART_XLNX_PS
+	default y
+
+endif # SERIAL
+
+if CONSOLE
+
+	config UART_CONSOLE
+	default y
+
+endif # CONSOLE
+
+if NETWORKING
+
+	config NET_L2_ETHERNET
+	default y
+
+	config ETH_XLNX_GEM
+	default y
+
+	config ETH_XLNX_GEM_PORT_0
+	default y
+	config ETH_XLNX_GEM_PORT_1
+	default n
+
+	config ETH_XLNX_GEM_PORT_0_INIT_PHY
+	default y
+	config ETH_XLNX_GEM_PORT_1_INIT_PHY
+	default n
+
+	config ETH_XLNX_GEM_PORT_0_DMA_BASE_ADDRESS
+	default 0x00001000
+	config ETH_XLNX_GEM_PORT_1_DMA_BASE_ADDRESS
+	default 0x00021000
+
+    config NET_NATIVE
+    default y
+    config NET_IPV6
+    default y
+    config NET_IPV4
+    default y
+    config NET_TCP
+    default y
+    config NET_UDP
+    default y
+
+endif # NETWORKING
+
+#if GPIO
+
+	config GPIO_XLNX_AXI
+	default y
+
+#endif # GPIO
+
+endif # BOARD_ZEDBOARD

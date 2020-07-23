@@ -10,6 +10,13 @@ config CPU_HAS_ARM_MPU
 	  This option is enabled when the CPU has a Memory Protection Unit (MPU)
 	  in ARM flavor.
 
+config CPU_HAS_ARM_MMU
+	bool
+	select CPU_HAS_MMU
+	help
+	  This option is enabled when the CPU has a Memory Management Unit (MMU)
+	  in ARM flavor.
+
 config CPU_HAS_NXP_MPU
 	bool
 	select CPU_HAS_MPU

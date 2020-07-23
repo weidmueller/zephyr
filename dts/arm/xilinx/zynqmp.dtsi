@@ -27,7 +27,7 @@
 			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL
 					IRQ_DEFAULT_PRIORITY>;
 			interrupt-names = "irq_0";
-			label = "UART_0";
+			label = "uart0";
 		};
 
 		ttc0: timer@ff110000 {
@@ -84,6 +84,54 @@
 			interrupt-names = "irq_0", "irq_1", "irq_2";
 			reg = <0xff140000 0x1000>;
 			label = "ttc3";
+		};
+
+		gem0: ethernet@ff0b0000 {
+			compatible = "xlnx,gem";
+			reg = <0xff0b0000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 57 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 58 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1";
+			label = "gem0";
+		};
+
+		gem1: ethernet@ff0c0000 {
+			compatible = "xlnx,gem";
+			reg = <0xff0c0000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 60 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1";
+			label = "gem1";
+		};
+
+		gem2: ethernet@ff0d0000 {
+			compatible = "xlnx,gem";
+			reg = <0xff0d0000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 62 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1";
+			label = "gem2";
+		};
+
+		gem3: ethernet@ff0e0000 {
+			compatible = "xlnx,gem";
+			reg = <0xff0e0000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 63 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 64 IRQ_TYPE_LEVEL 
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1";
+			label = "gem3";
 		};
 	};
 };

@@ -109,10 +109,33 @@ out_fp_active:
 out_fp_endif:
     str r0, [r2, #_thread_offset_to_mode]
 #endif /* CONFIG_FPU_SHARING */
-#elif defined(CONFIG_ARMV7_R)
+#elif defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
     /* Store rest of process context */
     cps #MODE_SYS
     stm r0, {r4-r11, sp}
+
+    #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+    #ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+
+    /* addr of floating point reg d00 in _current->arch.preempt_float in r0 */
+    add r0, r2, #_preempt_float_offset_to_d00
+    vstmia r0, {d0-d15}
+
+    /* addr of floating point reg d16 in _current->arch.preempt_float in r0 */
+    add r0, r2, #_preempt_float_offset_to_d16
+    vstmia r0, {d16-d31}
+
+    /* addr of floating point reg fpscr in _current->arch.preempt_float in r3 */
+    add r3, r2, #_preempt_float_offset_to_fpscr
+    vmrs r0, fpscr
+    vmrs r1, fpexc
+    stm r3, {r0-r1}^
+
+    ldr r1, =_kernel
+
+    #endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+    #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
+
     cps #MODE_SVC
 #else
 #error Unknown ARM architecture
@@ -125,7 +148,7 @@ out_fp_endif:
     movs.n r0, #_EXC_IRQ_DEFAULT_PRIO
     msr BASEPRI, r0
     isb /* Make the effect of disabling interrupts be realized immediately */
-#elif defined(CONFIG_ARMV7_R)
+#elif defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
     /*
      * Interrupts are still disabled from arch_swap so empty clause
      * here to avoid the preprocessor error below
@@ -307,7 +330,7 @@ in_fp_endif:
     /* load callee-saved + psp from thread */
     add r0, r2, #_thread_offset_to_callee_saved
     ldmia r0, {v1-v8, ip}
-#elif defined(CONFIG_ARMV7_R)
+#elif defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
 _thread_irq_disabled:
     /* load _kernel into r1 and current k_thread into r2 */
     ldr r1, =_kernel
@@ -320,6 +343,29 @@ _thread_irq_disabled:
     /* restore r4-r11 and sp for incoming thread */
     cps #MODE_SYS
     ldm r0, {r4-r11, sp}
+
+    #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+    #ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+
+    /* addr of floating point reg d00 in _current->arch.preempt_float in r0 */
+    add r0, r2, #_preempt_float_offset_to_d00
+    vldmia r0, {d0-d15}
+
+    /* addr of floating point reg d16 in _current->arch.preempt_float in r0 */
+    add r0, r2, #_preempt_float_offset_to_d16
+    vldmia r0, {d16-d31}
+
+    /* addr of floating point reg fpscr in _current->arch.preempt_float in r3 */
+    add r3, r2, #_preempt_float_offset_to_fpscr
+    ldm r3, {r0-r1}^
+    vmsr fpscr, r0
+    vmsr fpexc, r1
+
+    ldr r1, =_kernel
+
+    #endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+    #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
+
     cps #MODE_SVC
 #else
 #error Unknown ARM architecture
@@ -569,7 +615,7 @@ valid_syscall_id:
     bx lr
 #endif /* CONFIG_USERSPACE */
 
-#elif defined(CONFIG_ARMV7_R)
+#elif defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
 
 /**
  *

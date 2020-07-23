@@ -28,5 +28,10 @@
 
 &ttc0 {
 	status = "okay";
-	clock-frequency = <12000000>;
+	clock-frequency = <150000000>;
+};
+
+&gem0 {
+	status = "okay";
+	local-mac-address = [00 80 41 00 00 01];
 };

@@ -1,0 +1,26 @@
+#
+# Copyright (c) 2018, Diego Sueiro
+# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+identifier: zedboard
+name: AVNET/Digilent Zedboard
+type: mcu
+arch: arm
+ram: 524288
+flash: 262144
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+testing:
+  ignore_tags:
+    - bluetooth
+    - interrupt
+supported:
+  - gpio
+  - net
+  - netif:eth
+

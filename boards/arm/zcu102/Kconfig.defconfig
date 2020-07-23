@@ -1,0 +1,69 @@
+#
+# Kconfig - Xilinx ZCU102 UltraScale Eval board
+#
+# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if BOARD_ZCU102
+
+config BOARD
+	default "zcu102"
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	int
+	default 100000000
+
+config SYS_CLOCK_TICKS_PER_SEC
+	default 1000
+
+if SERIAL
+
+	config SERIAL_HAS_DRIVER
+	default y
+
+	config UART_INTERRUPT_DRIVEN
+	default n
+
+	config UART_XLNX_PS
+	default y
+
+endif # SERIAL
+
+if CONSOLE
+
+	config UART_CONSOLE
+	default y
+
+endif # CONSOLE
+
+if NETWORKING
+
+	config NET_L2_ETHERNET
+	default y
+
+	config ETH_XLNX_GEM
+	default y
+
+	config ETH_XLNX_GEM_PORT_0
+	default n
+	config ETH_XLNX_GEM_PORT_1
+	default n
+	config ETH_XLNX_GEM_PORT_2
+	default n
+	config ETH_XLNX_GEM_PORT_3
+	default y
+
+	config ETH_XLNX_GEM_PORT_0_INIT_PHY
+	default n
+	config ETH_XLNX_GEM_PORT_1_INIT_PHY
+	default n
+	config ETH_XLNX_GEM_PORT_2_INIT_PHY
+	default n
+	config ETH_XLNX_GEM_PORT_3_INIT_PHY
+	default n
+
+endif # NETWORKING
+
+endif # BOARD_ZCU102

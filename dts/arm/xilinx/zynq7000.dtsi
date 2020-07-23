@@ -1,0 +1,123 @@
+/*
+ * Copyright (c) 2020 Weidmueller Interface GmbH & Co. KG
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <mem.h>
+#include <arm/armv7-a.dtsi>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+/ {
+	soc {
+		interrupt-parent = <&gic>;
+
+		cpus {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			cpu@0 {
+				device_type = "cpu";
+				compatible = "arm,cortex-a9";
+				reg = <0>;
+			};
+		};
+
+		arch_timer: timer@f8f00200 {
+			compatible = "arm,arm-timer";
+			status = "okay";
+			interrupt-names = "irq_0", "irq_1", "irq_2", "irq_3";
+			interrupts = <GIC_PPI 13 IRQ_TYPE_EDGE
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_PPI 14 IRQ_TYPE_EDGE
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_PPI 11 IRQ_TYPE_EDGE
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_PPI 10 IRQ_TYPE_EDGE
+					IRQ_DEFAULT_PRIORITY>;
+			reg = <0xf8f00200 0x1C>;
+			label = "arch_timer";
+		};
+
+		gic: interrupt-controller@f8f01000 {
+			compatible = "arm,gic";
+			reg = <0xf8f01000 0x1000>,
+				<0xf8f00100 0x100>;
+			status = "okay";
+			interrupt-controller;
+			#interrupt-cells = <4>;
+			label = "gic";
+		};
+
+		gem0: ethernet@e000b000 {
+			compatible = "xlnx,gem";
+			reg = <0xe000b000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 23 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1";
+			label = "gem0";
+		};
+
+		gem1: ethernet@e000c000 {
+			compatible = "xlnx,gem";
+			reg = <0xe000c000 0x1000>;
+			status = "disabled";
+			interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 46 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1";
+			label = "gem1";
+		};
+
+		uart0: uart@e0000000 {
+			compatible = "xlnx,xuartps";
+			reg = <0xe0000000 0x4c>;
+			status = "disabled";
+			interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0";
+			label = "uart0";
+		};
+
+		uart1: uart@e0001000 {
+			compatible = "xlnx,xuartps";
+			reg = <0xe0001000 0x4c>;
+			status = "disabled";
+			interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0";
+			label = "uart1";
+		};
+
+		ttc0: timer@f8001000 {
+			compatible = "xlnx,ttcps";
+			status = "disabled";
+			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 11 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 12 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1", "irq_2";
+			reg = <0xf8001000 0x1000>;
+			label = "ttc0";
+		};
+
+		ttc1: timer@f8002000 {
+			compatible = "xlnx,ttcps";
+			status = "disabled";
+			interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 38 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>,
+				     <GIC_SPI 39 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0", "irq_1", "irq_2";
+			reg = <0xf8002000 0x1000>;
+			label = "ttc1";
+		};
+	};
+};

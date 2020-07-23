@@ -85,10 +85,16 @@ struct __esf {
 		uint32_t xpsr;
 	} basic;
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+#ifndef CONFIG_ARMV7_A_FP_VFPV3_D16
 	float s[16];
 	uint32_t fpscr;
 	uint32_t undefined;
-#endif
+#else /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+	double d[32]; /* D0..D31 */
+	uint32_t fpexc;
+	uint32_t fpscr;
+#endif /* !CONFIG_ARMV7_A_FP_VFPV3_D16*/
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 };
 
 typedef struct __esf z_arch_esf_t;
