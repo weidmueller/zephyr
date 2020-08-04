@@ -57,7 +57,7 @@ static ALWAYS_INLINE void arm_arch_timer_set_compare(uint64_t val)
 	sys_write32((cntv_ctl | COMP_CTL_ENABLE), DT_REG_ADDR(DT_INST(0, arm_arm_timer)) + CONTROL_REG_OFFSET);
 }
 
-#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
+#if defined(CONFIG_ARM_ARCH_TIMER_ERRATA_740657) || defined(CONFIG_QEMU_TARGET)
 
 /* 
  * R/W access to the event flag register is required for the timer errata
@@ -79,19 +79,13 @@ static ALWAYS_INLINE void arm_arch_timer_clear_int_status(void)
 	sys_write32(0x1, DT_REG_ADDR(DT_INST(0, arm_arm_timer)) + INT_STATUS_REG_OFFSET);
 }
 
-#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
+#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 || CONFIG_QEMU_TARGET */
 
 static ALWAYS_INLINE void arm_arch_timer_enable(unsigned char enable)
 {
 	uint32_t cntv_ctl = sys_read32(DT_REG_ADDR(DT_INST(0, arm_arm_timer)) + CONTROL_REG_OFFSET);
 
 	if (enable) {
-		cntv_ctl &= ~(CNTV_CTL_ENABLE | IRQ_CTL_ENABLE);
-		sys_write32(cntv_ctl, DT_REG_ADDR(DT_INST(0, arm_arm_timer)) + CONTROL_REG_OFFSET);
-
-		sys_write32(0, DT_REG_ADDR(DT_INST(0, arm_arm_timer)) + COUNTVAL_LOW_REG_OFFSET);
-		sys_write32(0, DT_REG_ADDR(DT_INST(0, arm_arm_timer)) + COUNTVAL_HIGH_REG_OFFSET);
-
 		cntv_ctl |=  (CNTV_CTL_ENABLE | IRQ_CTL_ENABLE);
 	} else {
 		cntv_ctl &= (~CNTV_CTL_ENABLE | IRQ_CTL_ENABLE);

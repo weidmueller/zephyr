@@ -1,6 +1,6 @@
 /*
  * Xilinx Processor System Gigabit Ethernet controller (GEM) driver
- * for Zynq-7000 and UltraScale SoCs
+ * for Zynq-7000 and ZynqMP (UltraScale) SoCs
  * 
  * Driver private data declarations
  * 
@@ -13,6 +13,9 @@
 
 #include <kernel.h>
 #include <zephyr/types.h>
+#include <net/net_pkt.h>
+
+#include "phy_xlnx_gem.h"
 
 #define ETH_XLNX_BUFFER_ALIGNMENT			4 /* RX/TX buffer alignment (in bytes) */
 
@@ -220,6 +223,8 @@
 #define ETH_XLNX_GEM_IXR_MGMNT_BIT			0x00000001 /* gem.intr_*: PHY management complete */
 #define ETH_XLNX_GEM_IXR_ALL_MASK			0x03FC7FFE /* gem.intr_*: Bit mask for all handled interrupt sources */
 
+/* Bits / bit masks relating to the GEM's MDIO interface */
+
 #define ETH_XLNX_GEM_MDIO_IDLE_BIT			0x00000004 /* gem.net_status: PHY management idle bit */
 #define ETH_XLNX_GEM_MDIO_IN_STATUS_BIT			0x00000002 /* gem.net_status: MDIO input status */
 
@@ -243,52 +248,13 @@
 #define ETH_XLNX_GEM_AUX_THREAD_TXDONE_BIT		(1 << 1)
 #define ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT		(1 << 7)
 
-/* PHY registers & constants -> Marvell Alaska specific! */
-
-#define PHY_BASE_REGISTERS_PAGE				0
-#define PHY_COPPER_CONTROL_REGISTER			0
-#define PHY_COPPER_STATUS_REGISTER			1
-#define PHY_IDENTIFIER_1_REGISTER			2
-#define PHY_IDENTIFIER_2_REGISTER			3
-#define PHY_COPPER_AUTONEG_ADV_REGISTER			4
-#define PHY_COPPER_LINK_PARTNER_ABILITY_REGISTER	5
-#define PHY_1000BASET_CONTROL_REGISTER			9
-#define PHY_COPPER_CONTROL_1_REGISTER			16
-#define PHY_COPPER_STATUS_1_REGISTER			17
-#define PHY_COPPER_INTERRUPT_ENABLE_REGISTER		18
-#define PHY_COPPER_INTERRUPT_STATUS_REGISTER		19
-#define PHY_COPPER_PAGE_SWITCH_REGISTER			22
-#define PHY_GENERAL_CONTROL_1_REGISTER			20
-#define PHY_GENERAL_CONTROL_1_PAGE			18
-
-#define PHY_ADV_BIT_100BASET_FDX			(1 << 8)
-#define PHY_ADV_BIT_100BASET_HDX			(1 << 7)
-#define PHY_ADV_BIT_10BASET_FDX				(1 << 6)
-#define PHY_ADV_BIT_10BASET_HDX				(1 << 5)
-
-#define PHY_MDIX_CONFIG_MASK				0x0003
-#define PHY_MDIX_CONFIG_SHIFT				5
-#define PHY_MODE_CONFIG_MASK				0x0003
-#define PHY_MODE_CONFIG_SHIFT				0
-
-#define PHY_COPPER_SPEED_CHANGED_INTERRUPT_BIT		(1 << 14)
-#define PHY_COPPER_DUPLEX_CHANGED_INTERRUPT_BIT		(1 << 13)
-#define PHY_COPPER_AUTONEG_COMPLETED_INTERRUPT_BIT	(1 << 11)
-#define PHY_COPPER_LINK_STATUS_CHANGED_INTERRUPT_BIT	(1 << 10)
-#define PHY_COPPER_LINK_STATUS_BIT_SHIFT		5
-
-#define PHY_LINK_SPEED_SHIFT				14
-#define PHY_LINK_SPEED_MASK				0x3
-
 /* Device configuration / run-time data resolver macros */
-
 #define DEV_CFG(dev) \
 	((struct eth_xlnx_gem_dev_cfg *)(dev)->config_info)
 #define DEV_DATA(dev) \
 	((struct eth_xlnx_gem_dev_data *)(dev)->driver_data)
 
 /* IRQ handler function type */
-
 typedef void (*eth_xlnx_gem_config_irq_t)(struct device *dev);
 
 /* Enums for bitfields representing configuration settings */
@@ -382,27 +348,33 @@ enum eth_xlnx_tx_clk_src
 
 #endif /* CONFIG_SOC_XILINX_ZYNQ7000 / CONFIG_SOC_XILINX_ZYNQMP */
 
-/* DMA buffer descriptor, TODO: 64-bit addressing and timestamping support */
-
+/* DMA buffer descriptor
+ * TODO for Cortex-A53: 64-bit addressing and timestamping support */
 struct eth_xlnx_gem_bd
 {
-	uint32_t		addr; /* Buffer physical address */
-	uint32_t		ctrl; /* Control word */
+	/* Buffer physical address */
+	uint32_t		addr;
+	/* Buffer control word */
+	uint32_t		ctrl;
 };
 
-/* DMA buffer descriptor management structure, used for both RX and TX buffer rings */
-
+/* DMA buffer descriptor management structure, used for both RX and TX 
+ * buffer rings */
 struct eth_xlnx_gem_bdring
 {
-	struct k_sem		ring_sem;        /* Concurrent modification protection */
-	struct eth_xlnx_gem_bd	*first_bd;       /* Points to the first BD in list */
-	uint8_t			next_to_use;     /* The next BD to be used for TX */
-	uint8_t			next_to_process; /* The next BD whose status shall be processed (both RX/TX) */
-	uint8_t			free_bds;        /* Number of currently available BDs */
+	/* Concurrent modification protection */
+	struct k_sem		ring_sem;
+	/* Pointer to the first BD in the list */
+	struct eth_xlnx_gem_bd	*first_bd;
+	/* Index of the next BD to be used for TX */
+	uint8_t			next_to_use;
+	/* Index of the next BD to be processed (both RX/TX) */
+	uint8_t			next_to_process;
+	/* Number of currently available BDs in this ring */
+	uint8_t			free_bds;
 };
 
 /* Device constant configuration parameters */
-
 struct eth_xlnx_gem_dev_cfg {
 	uint32_t			base_addr;
 	eth_xlnx_gem_config_irq_t	config_func;
@@ -416,9 +388,9 @@ struct eth_xlnx_gem_dev_cfg {
 	enum eth_xlnx_hwrx_buffer_size	hw_rx_buffer_size;
 	uint8_t				hw_rx_buffer_offset;
 	uint8_t				ahb_rx_buffer_size;
-	#ifdef CONFIG_SOC_XILINX_ZYNQ7000
+#ifdef CONFIG_SOC_XILINX_ZYNQ7000
 	uint8_t				amba_clk_en_bit;
-	#endif
+#endif
 
 	uint32_t			reference_clk_freq;
 	enum eth_xlnx_ref_pll		reference_pll;
@@ -426,23 +398,23 @@ struct eth_xlnx_gem_dev_cfg {
 	uint32_t			gem_clk_divisor1;
 	uint32_t			gem_clk_divisor0;
 
-	#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 	enum eth_xlnx_clk_src		gem_clk_source;
-	#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
+#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 	uint32_t			gem_clk_ctrl_shift;
 	enum eth_xlnx_rx_clk_src	gem_rx_clk_source;
 	enum eth_xlnx_tx_clk_src	gem_tx_clk_source;
 	enum eth_xlnx_ref_pll		lpd_lsbus_pll;
 	uint32_t			lpd_lsbus_pll_ref_clk_multi;
 	uint32_t			lpd_lsbus_divisor0;
-	#endif
+#endif
 
-	#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 	uint32_t			slcr_clk_register_addr;
 	uint32_t			slcr_rclk_register_addr;
-	#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
+#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 	uint32_t			crl_apb_ref_ctrl_register_addr;
-	#endif
+#endif
 
 	uint8_t				rxbd_count;
 	uint8_t				txbd_count;
@@ -477,7 +449,6 @@ struct eth_xlnx_gem_dev_cfg {
 };
 
 /* Device run time data */
-
 struct eth_xlnx_gem_dev_data {
 	struct net_if			*iface;
 	uint8_t				mac_addr[6];
@@ -495,6 +466,7 @@ struct eth_xlnx_gem_dev_data {
 	uint8_t				phy_addr;
 	uint32_t			phy_id;
 	struct k_timer			phy_poll_timer;
+	struct phy_xlnx_gem_api		*phy_access_api;
 
 	enum eth_xlnx_mdc_clock_divisor	mdc_divisor;
 
@@ -504,15 +476,14 @@ struct eth_xlnx_gem_dev_data {
 	struct eth_xlnx_gem_bdring	rxbd_ring;
 	struct eth_xlnx_gem_bdring	txbd_ring;
 
-	#ifdef CONFIG_NET_STATISTICS_ETHERNET
+#ifdef CONFIG_NET_STATISTICS_ETHERNET
 	struct net_stats_eth		stats;
-	#endif
+#endif
 
 	uint8_t				started;
 };
 
 /* Macro for starting a GEM device's auxiliary thread */
-
 #define ETH_XLNX_GEM_AUX_THREAD_START(port) \
 if (dev_conf->base_addr ==  DT_REG_ADDR(DT_NODELABEL(gem##port))) { \
 	dev_data->aux_thread_tid = k_thread_create( \
@@ -525,48 +496,6 @@ if (dev_conf->base_addr ==  DT_REG_ADDR(DT_NODELABEL(gem##port))) { \
 		0, \
 		K_NO_WAIT); \
 }
-
-/* Driver API */
-
-static int  eth_xlnx_gem_dev_init(struct device *dev);
-static void eth_xlnx_gem_iface_init(struct net_if *iface);
-
-static void eth_xlnx_gem_irq_config(struct device *dev);
-static void eth_xlnx_gem_isr(void *arg);
-
-static int  eth_xlnx_gem_start_device(struct device *dev);
-static int  eth_xlnx_gem_stop_device(struct device *dev);
-
-static int  eth_xlnx_gem_send(struct device *dev, struct net_pkt *pkt);
-
-#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-static void eth_xlnx_gem_amba_clk_enable(struct device *dev);
-#endif
-static void eth_xlnx_gem_reset_hw(struct device *dev);
-static void eth_xlnx_gem_configure_clocks(struct device *dev);
-static void eth_xlnx_gem_set_initial_nwcfg(struct device *dev);
-static void eth_xlnx_gem_set_mac_address(struct device *dev);
-static void eth_xlnx_gem_set_initial_dmacr(struct device *dev);
-static void eth_xlnx_gem_init_phy(struct device *dev);
-static void eth_xlnx_gem_configure_buffers(struct device *dev);
-
-static enum ethernet_hw_caps eth_xlnx_gem_get_capabilities(struct device *dev);
-#if defined(CONFIG_NET_STATISTICS_ETHERNET)
-static struct net_stats_eth *eth_xlnx_gem_stats(struct device *dev);
-#endif
-
-/* PHY access functions */
-
-static void eth_xlnx_gem_phy_detect(struct device *dev);
-static void eth_xlnx_gem_phy_reset(struct device *dev);
-static void eth_xlnx_gem_phy_configure(struct device *dev);
-
-static uint16_t eth_xlnx_gem_phy_poll_int_status(struct device *dev);
-static uint8_t  eth_xlnx_gem_phy_poll_link_status(struct device *dev);
-static enum eth_xlnx_link_speed eth_xlnx_gem_phy_poll_link_speed(struct device *dev);
-
-static int  eth_xlnx_gem_mdio_read(uint32_t base_addr, uint8_t phy_addr, uint8_t reg_addr);
-static void eth_xlnx_gem_mdio_write(uint32_t base_addr, uint8_t phy_addr, uint8_t reg_addr, uint16_t value);
 
 #endif /* _ZEPHYR_DRIVERS_ETHERNET_ETH_XLNX_GEM_PRIV_H_ */
 

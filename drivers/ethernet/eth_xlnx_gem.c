@@ -1,6 +1,6 @@
 /* 
  * Xilinx Processor System Gigabit Ethernet controller (GEM) driver
- * for Zynq-7000 and UltraScale SoCs
+ * for Zynq-7000 and ZynqMP (UltraScale) SoCs
  * 
  * Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
  * SPDX-License-Identifier: Apache-2.0
@@ -10,7 +10,6 @@
 #include <device.h>
 #include <devicetree.h>
 
-#include <net/net_pkt.h>
 #include <net/net_if.h>
 #include <net/ethernet.h>
 #include <ethernet/eth_stats.h>
@@ -24,51 +23,92 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
+/* Forward declarations */
+
+static int  eth_xlnx_gem_dev_init(struct device *dev);
+static void eth_xlnx_gem_iface_init(struct net_if *iface);
+
+static void eth_xlnx_gem_irq_config(struct device *dev);
+static void eth_xlnx_gem_isr(void *arg);
+
+static int  eth_xlnx_gem_start_device(struct device *dev);
+static int  eth_xlnx_gem_stop_device(struct device *dev);
+
+static int  eth_xlnx_gem_send(struct device *dev, struct net_pkt *pkt);
+
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
+static void eth_xlnx_gem_amba_clk_enable(struct device *dev);
+#endif
+static void eth_xlnx_gem_reset_hw(struct device *dev);
+static void eth_xlnx_gem_configure_clocks(struct device *dev);
+static void eth_xlnx_gem_set_initial_nwcfg(struct device *dev);
+static void eth_xlnx_gem_set_mac_address(struct device *dev);
+static void eth_xlnx_gem_set_initial_dmacr(struct device *dev);
+static void eth_xlnx_gem_init_phy(struct device *dev);
+static void eth_xlnx_gem_configure_buffers(struct device *dev);
+
+static enum ethernet_hw_caps eth_xlnx_gem_get_capabilities(struct device *dev);
+#if defined(CONFIG_NET_STATISTICS_ETHERNET)
+static struct net_stats_eth *eth_xlnx_gem_stats(struct device *dev);
+#endif
+
 /* Device tree data availability checks for all enabled device instances */
 
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_0) && !DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
 #error Data missing for GEM0: device tree configuration data is unavailable!
 #endif
 
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_0) && DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
-#error GEM0 is marked active in the current device tree, but is not activated in Kconfig!
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
+#error GEM0 is marked active in the current device tree, but is not \
+	activated in Kconfig!
 #endif
 
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_1)	&& !DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_1)	&& \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
 #error Data missing for GEM1: device tree configuration data is unavailable!
 #endif
 
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_1) && DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
-#error GEM1 is marked active in the current device tree, but is not activated in Kconfig!
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_1) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
+#error GEM1 is marked active in the current device tree, but is not \
+	activated in Kconfig!
 #endif
 
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_2) && !DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
 #error Data missing for GEM2: device tree configuration data is unavailable!
 #endif
 
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_2) && DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
-#error GEM2 is marked active in the current device tree, but is not activated in Kconfig!
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
+#error GEM2 is marked active in the current device tree, but is not \
+	activated in Kconfig!
 #endif
 
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_3) && !DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
 #error Data missing for GEM3: device tree configuration data is unavailable!
 #endif
 
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_3) && DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
-#error GEM3 is marked active in the current device tree, but is not activated in Kconfig!
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
+#error GEM3 is marked active in the current device tree, but is not \
+	activated in Kconfig!
 #endif
 
-/* GEM Driver API declaration */
-
+/* GEM Driver API declaration, required by the upcoming instances of
+ * the ETH_NET_DEVICE_INIT macro for each activated device instance */
 static const struct ethernet_api eth_xlnx_gem_apis = {
 	.iface_api.init		= eth_xlnx_gem_iface_init,
 	.get_capabilities	= eth_xlnx_gem_get_capabilities,
 	.send			= eth_xlnx_gem_send,
 	.start			= eth_xlnx_gem_start_device,
 	.stop			= eth_xlnx_gem_stop_device,
-	#if defined(CONFIG_NET_STATISTICS_ETHERNET)
+#if defined(CONFIG_NET_STATISTICS_ETHERNET)
 	.get_stats		= eth_xlnx_gem_stats,
-	#endif
+#endif
 };
 
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_0
@@ -464,6 +504,7 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem0_dev_data = {
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
+	.phy_access_api  = NULL,
 	.mdc_divisor     = MDC_DIVISOR_224,
 	.first_rx_buffer = NULL,
 	.first_tx_buffer = NULL
@@ -889,6 +930,7 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem1_dev_data = {
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
+	.phy_access_api  = NULL,
 	.mdc_divisor     = MDC_DIVISOR_224,
 	.first_rx_buffer = NULL,
 	.first_tx_buffer = NULL
@@ -1258,6 +1300,7 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem2_dev_data = {
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
+	.phy_access_api  = NULL,
 	.mdc_divisor     = MDC_DIVISOR_224,
 	.first_rx_buffer = NULL,
 	.first_tx_buffer = NULL
@@ -1627,6 +1670,7 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem3_dev_data = {
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
+	.phy_access_api  = NULL,
 	.mdc_divisor     = MDC_DIVISOR_224,
 	.first_rx_buffer = NULL,
 	.first_tx_buffer = NULL
@@ -1657,14 +1701,23 @@ static void eth_xlnx_gem_aux_timer (struct k_timer *timer_id)
 {
 	struct net_if *iface = (struct net_if*)timer_id->user_data;
 	struct device *dev = net_if_get_device(iface);
+	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
+	int msgq_rc = 0;
 
 	uint8_t aux_thread_notify = ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT;
 
 	/* Trigger the respective auxiliary thread by posting the POLL_PHY 
 	 * bit into the thread's mailbox */
 
-	k_msgq_put(&dev_data->aux_thread_msgq, &aux_thread_notify, K_NO_WAIT);
+	msgq_rc = k_msgq_put(&dev_data->aux_thread_msgq, &aux_thread_notify,
+		K_NO_WAIT);
+	if (msgq_rc < 0) {
+		LOG_ERR("GEM@0x%08X auxiliary thread notification for "
+			"PHY status polling failed - k_msgq_put returns %d",
+			dev_conf->base_addr,
+			msgq_rc);
+	}
 }
 
 /* Auxiliary thread function. Handles RX/TX done indications as well as
@@ -1707,80 +1760,71 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 		k_msgq_get(&dev_data->aux_thread_msgq, &aux_thread_notify, K_FOREVER);
 		if ((aux_thread_notify & ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT) != 0) {
 
-			phy_status = eth_xlnx_gem_phy_poll_int_status(dev);
+			if (dev_data->phy_access_api != NULL) {
+				phy_status = dev_data->phy_access_api->phy_poll_status_change_func(dev);
 
-			if ((phy_status & (
-				  PHY_COPPER_SPEED_CHANGED_INTERRUPT_BIT
-				| PHY_COPPER_AUTONEG_COMPLETED_INTERRUPT_BIT
-				| PHY_COPPER_LINK_STATUS_CHANGED_INTERRUPT_BIT)) != 0) {
+				if ((phy_status & (
+					PHY_XLNX_GEM_EVENT_LINK_SPEED_CHANGED
+					| PHY_XLNX_GEM_EVENT_LINK_STATE_CHANGED
+					| PHY_XLNX_GEM_EVENT_AUTONEG_COMPLETE)) != 0) {
 
-				/* Read the PHY's link status. Handling a 'link down' event is
-				 * the possible simplest case */
+					/* Read the PHY's link status. Handling a 'link down' event is
+					* the possible simplest case */
 
-				link_status = eth_xlnx_gem_phy_poll_link_status(dev);
+					link_status = dev_data->phy_access_api->phy_poll_link_status_func(dev);
 
-				if (link_status == 0) {
-					/* Link is down -> disable RX/TX/interrupts, propagate to 
-					 * the Ethernet layer that the link has gone down */
+					if (link_status == 0) {
+						/* Link is down -> disable RX/TX/interrupts, propagate to 
+						 * the Ethernet layer that the link has gone down */
 
-					if (dev_data->started == 1) {
-						eth_xlnx_gem_stop_device(dev);
-						dev_data->started = 0;
+						if (dev_data->started == 1) {
+							eth_xlnx_gem_stop_device(dev);
+							dev_data->started = 0;
+						}
+
+						net_eth_carrier_off(iface);
+						dev_data->eff_link_speed = LINK_DOWN;
+
+						LOG_DBG("GEM@0x%08X link down",
+							dev_conf->base_addr);
+					} else {
+
+						/* A link has been detected, which, depending on the 
+						* driver's configuration, might have a different speed 
+						* than the previous link. Therefore, the clock divisors
+						* must be adjusted accordingly (requires both div0 and
+						* div1 to have been set to 0 = auto-detect in the device
+						* configuration). Afterwards, reset the RX and TX buffer
+						* descriptors to their initial states for a clean start
+						* and then re-enable RX/TX/interrupts after propagating
+						* to the Ethernet layer that the interface is back up 
+						* again */
+
+						if (dev_data->started == 1) {
+							eth_xlnx_gem_stop_device(dev);
+						}
+
+						dev_data->eff_link_speed = 
+							dev_data->phy_access_api->phy_poll_link_speed_func(dev);
+						eth_xlnx_gem_configure_clocks(dev);
+						eth_xlnx_gem_configure_buffers(dev);
+						net_eth_carrier_on(iface);
+
+						if (dev_data->started == 1) {
+							eth_xlnx_gem_start_device(dev);
+						}
+
+						LOG_DBG(
+							"GEM@0x%08X link up, %s",
+							dev_conf->base_addr,
+							(dev_data->eff_link_speed == LINK_1GBIT)
+							? "1 GBit/s"
+							: (dev_data->eff_link_speed == LINK_100MBIT)
+							? "100 MBit/s" 
+							: (dev_data->eff_link_speed == LINK_10MBIT)
+							? "10 MBit/s"  
+							: "undefined / link down");
 					}
-
-					net_eth_carrier_off(iface);
-					dev_data->eff_link_speed = LINK_DOWN;
-
-					printk("GEM@0x%08X link down\n", dev_conf->base_addr);
-					LOG_DBG("eth_xlnx_gem_aux_thread: GEM@0x%08X link down\n",
-						dev_conf->base_addr);
-				} else {
-
-					/* A link has been detected, which, depending on the 
-					 * driver's configuration, might have a different speed 
-					 * than the previous link. Therefore, the clock divisors
-					 * must be adjusted accordingly (requires both div0 and
-					 * div1 to have been set to 0 = auto-detect in the device
-					 * configuration). Afterwards, reset the RX and TX buffer
-					 * descriptors to their initial states for a clean start
-					 * and then re-enable RX/TX/interrupts after propagating
-					 * to the Ethernet layer that the interface is back up 
-					 * again */
-
-					if (dev_data->started == 1) {
-						eth_xlnx_gem_stop_device(dev);
-					}
-
-					dev_data->eff_link_speed = 
-						eth_xlnx_gem_phy_poll_link_speed(dev);
-					eth_xlnx_gem_configure_clocks(dev);
-					eth_xlnx_gem_configure_buffers(dev);
-					net_eth_carrier_on(iface);
-
-					if (dev_data->started == 1) {
-						eth_xlnx_gem_start_device(dev);
-					}
-
-					printk(
-						"GEM@0x%08X link up, %s\n",
-						dev_conf->base_addr,
-						(dev_data->eff_link_speed == LINK_1GBIT)
-						? "1 GBit/s" 
-						: (dev_data->eff_link_speed == LINK_100MBIT) 
-						? "100 MBit/s" 
-						: (dev_data->eff_link_speed == LINK_10MBIT)  
-						? "10 MBit/s"  
-						: "undefined / link down");
-					LOG_DBG(
-						"eth_xlnx_gem_aux_thread: GEM@0x%08X link up, %s\n",
-						dev_conf->base_addr,
-						(dev_data->eff_link_speed == LINK_1GBIT)
-						? "1 GBit/s"
-						: (dev_data->eff_link_speed == LINK_100MBIT)
-						? "100 MBit/s" 
-						: (dev_data->eff_link_speed == LINK_10MBIT)
-						? "10 MBit/s"  
-						: "undefined / link down");
 				}
 			}
 		}
@@ -1871,8 +1915,10 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 				if ((reg_val & ETH_XLNX_GEM_RXBD_START_OF_FRAME_BIT) == 0) {
 					/* Although the current BD is marked as 'used', it 
 					 * doesn't contain the SOF bit */
-					LOG_DBG("eth_xlnx_gem_aux_thread: unexpected missing"
-						"SOF bit in RX BD [%u]\n", first_bd_idx);
+					LOG_ERR("GEM@0x%08X unexpected missing "
+						"SOF bit in RX BD [%u]",
+						dev_conf->base_addr,
+						first_bd_idx);
 					break;
 				}
 
@@ -1942,7 +1988,7 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 									+ src_buffer_offs),
 								eff_copy_len);
 
-							#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_IN
+#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_IN
 							uint32_t iter = 0;
 							uint8_t  *dbg_data = (uint8_t*)data_dest;
 							
@@ -1953,7 +1999,7 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 								printk("%02X ", *dbg_data++);
 							}
 							printk("\n");
-							#endif
+#endif
 
 							net_buf_add(pkt_buf, eff_copy_len);
 
@@ -1985,15 +2031,16 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 					/* Propagate the received packet to the network stack */
 
 					if (net_recv_data(dev_data->iface, pkt) < 0) {
-						LOG_DBG("eth_xlnx_gem_aux_thread: packet hand-over"
-							"to IP stack failed\n");
+						LOG_ERR("GEM@0x%08X RX packet hand-over"
+							"to IP stack failed",
+							dev_conf->base_addr);
 						net_pkt_unref(pkt);
 					}
 
-					#ifdef CONFIG_NET_STATISTICS_ETHERNET
+#ifdef CONFIG_NET_STATISTICS_ETHERNET
 					dev_data->stats.bytes.sent += rx_data_length;
 					dev_data->stats.pkts.rx++;
-					#endif
+#endif
 
 				} else { /* eff_link_speed == LINK_DOWN || started == 0 */
 
@@ -2080,13 +2127,14 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 	 * periodic link monitoring from within the current driver instance's
 	 * auxiliary thread detects a link, the updated carrier status will
 	 * be propagated. If the current driver instance doesn't manage an
-	 * associated PHY, declare the link up at the nominal link speed. */
-	if (dev_conf->init_phy == 1) {
+	 * associated PHY, or if no compatible PHY could be found, declare 
+	 * the link up at the nominal link speed. */
+	if (dev_conf->init_phy == 1 && dev_data->phy_access_api != NULL) {
 		net_eth_carrier_off(iface);
 	} else {
 		dev_data->eff_link_speed = dev_conf->max_link_speed;
-		LOG_DBG("eth_xlnx_gem_iface_init: GEM@0x%08X doesn't manage \
-			its own PHY, assuming link up at %s\n",
+		LOG_DBG("GEM@0x%08X PHY not managed by the driver or no "
+			"compatible PHY detected, assuming link up at %s",
 			dev_conf->base_addr,
 			(dev_data->eff_link_speed == LINK_1GBIT)
 			? "1 GBit/s" 
@@ -2113,8 +2161,9 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 		10);
 
 	/* Initialize the timer for the auxiliary thread if the PHY of the
-	 * respective GEM is managed by the corresponding driver's instance */
-	if (dev_conf->init_phy == 1) {
+	 * respective GEM is managed by the corresponding driver's instance
+	 * and a compatible PHY was detected */
+	if (dev_conf->init_phy == 1 && dev_data->phy_access_api != NULL) {
 		k_timer_init(
 			&dev_data->phy_poll_timer,
 			eth_xlnx_gem_aux_timer,
@@ -2137,7 +2186,7 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 	#endif
 
 	/* Start the PHY polling timer (if applicable, see above) */
-	if (dev_conf->init_phy == 1) {
+	if (dev_conf->init_phy == 1 && dev_data->phy_access_api != NULL) {
 		k_timer_start(&dev_data->phy_poll_timer, 
 			K_SECONDS(1), K_SECONDS(1));
 	}
@@ -2153,38 +2202,38 @@ static void eth_xlnx_gem_irq_config (struct device *dev)
 	/* Attach to the respective GEM's general IRQ line. The GEMs'
 	 * Wake-on-LAN IRQs are not yet supported */
 
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem0))) {
 		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem0)),
 			DT_IRQ(DT_NODELABEL(gem0), priority),
 			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem0), 0);
 		irq_enable(DT_IRQN(DT_NODELABEL(gem0)));
 	}
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem1))) {
 		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem1)),
 			DT_IRQ(DT_NODELABEL(gem1), priority),
 			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem1), 0);
 		irq_enableDT_IRQN(DT_NODELABEL(gem1)));
 	}
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem2))) {
 		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem2)),
 			DT_IRQ(DT_NODELABEL(gem2), priority),
 			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem2), 0);
 		irq_enable(DT_IRQN(DT_NODELABEL(gem2)));
 	}
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem3))) {
 		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem3)),
 			DT_IRQ(DT_NODELABEL(gem3), priority),
 			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem3), 0);
 		irq_enable(DT_IRQN(DT_NODELABEL(gem3)));
 	}
-	#endif
+#endif
 }
 
 static void eth_xlnx_gem_isr (void *arg) 
@@ -2192,9 +2241,9 @@ static void eth_xlnx_gem_isr (void *arg)
 	struct device *const dev = (struct device *const)arg;
 	struct eth_xlnx_gem_dev_cfg *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-
 	uint32_t reg_val_isr       = 0;
 	uint8_t  aux_thread_notify = 0x00;
+	int msgq_rc = 0;
 
 	/* Read the interrupt status register */
 	reg_val_isr = sys_read32(dev_conf->base_addr + ETH_XLNX_GEM_ISR_OFFSET);
@@ -2202,7 +2251,8 @@ static void eth_xlnx_gem_isr (void *arg)
 	/* TODO: handling if one or more error flag(s) are set in the interrupt
 	 * status register. -> For now, just log them */
 	if (reg_val_isr & 0x00000C60) {
-		LOG_DBG("eth_xlnx_gem_isr: error(s) set in ISR reg: 0x%08X\n",
+		LOG_ERR("GEM@0x%08X error(s) set in ISR reg: 0x%08X",
+			dev_conf->base_addr,
 			reg_val_isr);
 	}
 
@@ -2220,8 +2270,14 @@ static void eth_xlnx_gem_isr (void *arg)
 	}
 
 	if (aux_thread_notify != 0x00) {
-		k_msgq_put(&dev_data->aux_thread_msgq, 
+		msgq_rc = k_msgq_put(&dev_data->aux_thread_msgq, 
 			&aux_thread_notify, K_NO_WAIT);
+		if (msgq_rc < 0) {
+			LOG_ERR("GEM@0x%08X auxiliary thread notification for "
+				"RX/TX handling failed - k_msgq_put returns %d",
+				dev_conf->base_addr,
+				msgq_rc);
+		}
 	}
 
 	/* Clear all interrupt status bits so that the interrupt is de-asserted
@@ -2256,8 +2312,9 @@ static int eth_xlnx_gem_start_device (struct device *dev)
 	reg_val |= (ETH_XLNX_GEM_NWCTRL_RXEN_BIT | ETH_XLNX_GEM_NWCTRL_TXEN_BIT);
 	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
-	/* Indicate carrier on in case there is no PHY attached */
-	if (dev_conf->init_phy == 0) {
+	/* Indicate carrier on in case there is no PHY attached /
+	 * PHY is not managed by this driver */
+	if (dev_conf->init_phy == 0 || dev_data->phy_access_api == NULL) {
 		net_eth_carrier_on(dev_data->iface);
 	}
 
@@ -2265,7 +2322,7 @@ static int eth_xlnx_gem_start_device (struct device *dev)
 	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK, 
 		dev_conf->base_addr + ETH_XLNX_GEM_IER_OFFSET);
 
-	LOG_DBG("eth_xlnx_gem_start_device: GEM@0x%08X started\n",
+	LOG_DBG("GEM@0x%08X started",
 		dev_conf->base_addr);
 
 	return 0;
@@ -2298,12 +2355,13 @@ static int eth_xlnx_gem_stop_device (struct device *dev)
 	sys_write32(0xFFFFFFFF, dev_conf->base_addr + ETH_XLNX_GEM_TXSR_OFFSET);
 	sys_write32(0xFFFFFFFF, dev_conf->base_addr + ETH_XLNX_GEM_RXSR_OFFSET);
 
-	/* Indicate carrier off in case there is no PHY attached */
-	if (dev_conf->init_phy == 0) {
+	/* Indicate carrier off in case there is no PHY attached /
+	 * PHY is not managed by this driver */
+	if (dev_conf->init_phy == 0 || dev_data->phy_access_api == NULL) {
 		net_eth_carrier_off(dev_data->iface);
 	}
 
-	LOG_DBG("eth_xlnx_gem_stop_device: GEM@0x%08X stopped\n",
+	LOG_DBG("GEM@0x%08X stopped",
 		dev_conf->base_addr);
 
 	return 0;
@@ -2311,24 +2369,22 @@ static int eth_xlnx_gem_stop_device (struct device *dev)
 
 static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 {
-	struct eth_xlnx_gem_dev_cfg *dev_conf	= DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data	= DEV_DATA(dev);
-	struct net_buf *frag			= NULL;
-
-	uint16_t pkt_len		= 0;
-	uint16_t used_in_buf		= 0;
-	uint16_t rem_frag_len		= 0;
-
-	uint8_t  bds_reqd		= 0;
-	uint8_t  curr_bd_idx		= 0;
-	uint8_t  *tx_buffer_offs	= NULL;
-
-	uint32_t reg_val		= 0;
+	struct eth_xlnx_gem_dev_cfg *dev_conf = DEV_CFG(dev);
+	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
+	struct net_buf *frag = NULL;
+	uint16_t pkt_len = 0;
+	uint16_t used_in_buf = 0;
+	uint16_t rem_frag_len = 0;
+	uint8_t  bds_reqd = 0;
+	uint8_t  curr_bd_idx = 0;
+	uint8_t  *tx_buffer_offs = NULL;
+	uint32_t reg_val = 0;
 
 	pkt_len = net_pkt_get_len(pkt);
 	if (pkt_len == 0)
 	{
-		LOG_DBG("eth_xlnx_gem_send: cannot TX, zero packet length\n");
+		LOG_ERR("GEM@0x%08X cannot TX, zero packet length",
+			dev_conf->base_addr);
 		return -EINVAL;
 	}
 
@@ -2336,7 +2392,8 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 	{
 		/* Won't write any packets to the TX buffers if the physical link 
 		 * is down */
-		LOG_DBG("eth_xlnx_gem_send: cannot TX, link down\n");
+		LOG_DBG("GEM@0x%08X cannot TX, link down",
+			dev_conf->base_addr);
 		return -EIO;
 	}
 
@@ -2350,8 +2407,9 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 	if (bds_reqd > dev_data->txbd_ring.free_bds)
 	{
 		LOG_DBG(
-			"eth_xlnx_gem_send: cannot TX, packet length %hu requires"
-			"%hhu BDs, current free count is only %hhu\n", 
+			"GEM@0x%08X cannot TX, packet length %hu requires"
+			"%hhu BDs, current free count is only %hhu", 
+			dev_conf->base_addr,
 			pkt_len, 
 			bds_reqd, 
 			dev_data->txbd_ring.free_bds);
@@ -2381,7 +2439,7 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 				/* The current packet fragment fits into the buffer pointed
 				 * to by the current BD */
 
-				#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
+#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
 				uint32_t iter = 0;
 				uint8_t  *dbg_data = (uint8_t*)frag->data;
 				
@@ -2391,7 +2449,7 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 					}
 					printk("%02X ", *dbg_data++);
 				}
-				#endif
+#endif
 
 				memcpy(
 					(void*)(&tx_buffer_offs[used_in_buf]),
@@ -2407,7 +2465,7 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 				 * -> copy the first part, set up the BD control word, move on
 				 * to the next BD */
 
-				#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
+#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
 				uint32_t iter = 0;
 				uint8_t  *dbg_data = (uint8_t*)frag->data;
 				
@@ -2417,7 +2475,7 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 					}
 					printk("%02X ", *dbg_data++);
 				}
-				#endif
+#endif
 
 				memcpy(
 					(void*)(&tx_buffer_offs[used_in_buf]),
@@ -2447,12 +2505,12 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 		}
 	}
 
-	#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
+#ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
 	printk("\n");
-	#endif
+#endif
 
-	/* All fragments transferred to the buffers, configure the current (=last)
-	 * BD */
+	/* All fragments transferred to the buffers, configure the current
+	 * (= last) BD */
 	reg_val  = sys_read32(
 		(uint32_t)(&dev_data->txbd_ring.first_bd[curr_bd_idx].ctrl));
 
@@ -2471,21 +2529,22 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 	/* Block until TX has completed */
 	int rc = k_sem_take(&dev_data->tx_done_sem, K_MSEC(5000));
 	if (rc < 0) {
-		LOG_DBG("eth_xlnx_gem_send: TX confirmation timed out\n");
+		LOG_ERR("GEM@0x%08X TX confirmation timed out",
+			dev_conf->base_addr);
 		return -EIO;
 	}
 
-	#ifdef CONFIG_NET_STATISTICS_ETHERNET
+#ifdef CONFIG_NET_STATISTICS_ETHERNET
 	dev_data->stats.bytes.sent += pkt_len;
 	dev_data->stats.pkts.tx++;
-	#endif
+#endif
 
 	return 0;
 }
 
 #ifdef CONFIG_NET_STATISTICS_ETHERNET
 
-static struct net_stats_eth *eth_xlnx_gem_stats (struct device *dev) 
+static struct net_stats_eth *eth_xlnx_gem_stats (struct device *dev)
 {
 	return &(DEV_DATA(dev)->stats);
 }
@@ -2603,7 +2662,7 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 	/* gem.net_cfg register bit (field) definitions: comp. Zynq-7000 TRM,
 	 * p. 1274 ff. */
 
-	#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 
 	/* MDC divisor depends on the CPU_1X clock frequency - calculation:
 	 * comp. Zynq-7000 TRM chapter 25.3. Calculate the divisor regardless
@@ -2613,14 +2672,14 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 		  (dev_conf->reference_clk_freq * CONFIG_ZYNQ_ARMPLL_MULTIPLIER) 
 		/ CONFIG_ZYNQ_ARMPLL_DIVISOR0);
 
-	#if   (defined CONFIG_ZYNQ_CLOCK_RATIO_6321)
+#if   (defined CONFIG_ZYNQ_CLOCK_RATIO_6321)
 	cpu_1x_clk /= 6;
-	#elif (defined CONFIG_ZYNQ_CLOCK_RATIO_4221)
+#elif (defined CONFIG_ZYNQ_CLOCK_RATIO_4221)
 	cpu_1x_clk /= 4;
-	#else
-	#error No clock divisor ratio setting found in ZYNQ configuration, \
-		cannot calculate MDC divider
-	#endif /* Zynq clock ratio */
+#else
+#error No clock divisor ratio setting found in ZYNQ configuration, \
+	cannot calculate MDC divider
+#endif /* Zynq clock ratio */
 
 	if        (cpu_1x_clk < 20000000) {
 		mdc_divisor = MDC_DIVISOR_8;
@@ -2640,7 +2699,7 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 		mdc_divisor = MDC_DIVISOR_224;
 	}
 
-	#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
+#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 
 	/* MDC divisor depends on the LPD LSBUS clock frequency.
 	 * This clock is based either on the IOPLL, RPLL (default)
@@ -2663,7 +2722,7 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 		mdc_divisor = MDC_DIVISOR_48;
 	}
 
-	#endif /* SOC_XILINX_ZYNQ7000 / SOC_XILINX_ZYNQMP */
+#endif /* SOC_XILINX_ZYNQ7000 / SOC_XILINX_ZYNQMP */
 
 	dev_data->mdc_divisor = mdc_divisor;
 
@@ -2709,11 +2768,13 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 
 		/* [22..21] Data bus width */
 		reg_val |= (((uint32_t)(dev_conf->amba_dbus_width)
-		& ETH_XLNX_GEM_NWCFG_DBUSW_MASK) << ETH_XLNX_GEM_NWCFG_DBUSW_SHIFT);
+			& ETH_XLNX_GEM_NWCFG_DBUSW_MASK)
+			<< ETH_XLNX_GEM_NWCFG_DBUSW_SHIFT);
 
 		/* [20..18] MDC clock divisor */
-		reg_val |= (((uint32_t)mdc_divisor & ETH_XLNX_GEM_NWCFG_MDC_MASK)
-		<< ETH_XLNX_GEM_NWCFG_MDC_SHIFT);
+		reg_val |= (((uint32_t)mdc_divisor
+			& ETH_XLNX_GEM_NWCFG_MDC_MASK)
+			<< ETH_XLNX_GEM_NWCFG_MDC_SHIFT);
 
 	if (dev_conf->discard_rx_fcs == 1) {
 		/* [17]     Discard FCS from received frames */
@@ -2727,7 +2788,8 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 
 		/* [15..14] RX buffer offset */
 		reg_val |= (((uint32_t)dev_conf->hw_rx_buffer_offset 
-		& ETH_XLNX_GEM_NWCFG_RXOFFS_MASK) << ETH_XLNX_GEM_NWCFG_RXOFFS_SHIFT);
+			& ETH_XLNX_GEM_NWCFG_RXOFFS_MASK)
+			<< ETH_XLNX_GEM_NWCFG_RXOFFS_SHIFT);
 
 	if (dev_conf->enable_pause == 1) {
 		/* [13]     Enable pause TX */
@@ -2788,7 +2850,8 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 	} else {
 		/* In 10 MBit/s mode, both bits [00] and [10] remain 0 */
 		reg_val &=
-			~(ETH_XLNX_GEM_NWCFG_1000_BIT | ETH_XLNX_GEM_NWCFG_100_BIT);
+			~(ETH_XLNX_GEM_NWCFG_1000_BIT
+			| ETH_XLNX_GEM_NWCFG_100_BIT);
 	}
 
 	/* Write the assembled register contents to gem.net_cfg */
@@ -2812,7 +2875,8 @@ static void eth_xlnx_gem_set_initial_dmacr (struct device *dev)
 	 *    e.g.: 0x02 = 128, 0x18 = 1536, 0xA0 = 10240  */
 
 	reg_val |= (
-		((uint32_t)dev_conf->ahb_rx_buffer_size & ETH_XLNX_GEM_DMACR_RX_BUF_MASK)
+		((uint32_t)dev_conf->ahb_rx_buffer_size
+		& ETH_XLNX_GEM_DMACR_RX_BUF_MASK)
 		<< ETH_XLNX_GEM_DMACR_RX_BUF_SHIFT);
 
 	if (dev_conf->enable_tx_chksum_offload == 1) {
@@ -2829,7 +2893,8 @@ static void eth_xlnx_gem_set_initial_dmacr (struct device *dev)
 	 *          0 = 1kB, 1 = 2kB, 2 = 4kB, 3 = 8kB */
 
 	reg_val |= (
-		((uint32_t)dev_conf->hw_rx_buffer_size << ETH_XLNX_GEM_DMACR_RX_SIZE_SHIFT)
+		((uint32_t)dev_conf->hw_rx_buffer_size
+		<< ETH_XLNX_GEM_DMACR_RX_SIZE_SHIFT)
 		& ETH_XLNX_GEM_DMACR_RX_SIZE_MASK);
 
 	if (dev_conf->enable_ahb_packet_endian_swap == 1) {
@@ -2863,13 +2928,13 @@ static void eth_xlnx_gem_set_mac_address (struct device *dev)
 	uint32_t regval_top = 0;
 	uint32_t regval_bot = 0;
 
-	/* Reverse the order of the MAC bytes: if the high byte of the address is
-	 * specified first in the array, the bytes will end up in the config 
-	 * registers (gem.spec_addr1_bot, gem.spec_addr1_top) in reverse order,
-	 * prompting the controller to discard any non-bcast packets since the
-	 * packets specifically addressed to us don't make it past the MAC address
-	 * filter which uses the values from the config registers */
-
+	/* Reverse the order of the MAC bytes: if the high byte of the
+	 * address is specified first in the array, the bytes will end up
+	 * in the config registers (gem.spec_addr1_bot, gem.spec_addr1_top)
+	 * in reverse order, prompting the controller to discard any non-
+	 * bcast packets since the packets specifically addressed to us
+	 * don't make it past the MAC address filter which uses the values
+	 * from the config registers. */
 	regval_bot  = (dev_data->mac_addr[0] & 0xFF);
 	regval_bot |= (dev_data->mac_addr[1] & 0xFF) << 8;
 	regval_bot |= (dev_data->mac_addr[2] & 0xFF) << 16;
@@ -2884,22 +2949,21 @@ static void eth_xlnx_gem_set_mac_address (struct device *dev)
 		dev_conf->base_addr + ETH_XLNX_GEM_LADDR1H_OFFSET);
 
 	LOG_DBG(
-		"eth_xlnx_gem_set_mac_address: GEM@0x%08X MAC set to "
-		"%02X:%02X:%02X:%02X:%02X:%02X\n", 
+		"GEM@0x%08X MAC %02X:%02X:%02X:%02X:%02X:%02X",
 		dev_conf->base_addr,
-		dev_data->mac_addr[5],
-		dev_data->mac_addr[4],
-		dev_data->mac_addr[3],
-		dev_data->mac_addr[2],
+		dev_data->mac_addr[0],
 		dev_data->mac_addr[1],
-		dev_data->mac_addr[0]);
+		dev_data->mac_addr[2],
+		dev_data->mac_addr[3],
+		dev_data->mac_addr[4],
+		dev_data->mac_addr[5]);
 }
 
 static void eth_xlnx_gem_configure_clocks (struct device *dev)
 {
-	/* MIO/EMIO setup for the respective GEM as described in the Zynq-7000
-	 * TRM, chapter 16.3.3, is not tackled here. This *should* be performed
-	 * by the PS7Init code. */
+	/* MIO/EMIO setup for the respective GEM as described in the 
+	 * Zynq-7000 TRM, chapter 16.3.3, is not tackled here. This
+	 * *should* be performed by the PS7Init code. */
 
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
@@ -2912,13 +2976,14 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 	uint32_t in      = (dev_conf->reference_clk_freq * 
 		dev_conf->reference_pll_ref_clk_multi);
 
-	if (dev_conf->init_phy == 0 || dev_data->eff_link_speed == LINK_DOWN) {
-		/* Run-time data indicates 'link down' or PHY management by this
-		 * driver is disabled -> this indicates the initial device
-		 * initialization. Once the auxiliary thread has started and has
-		 * picked up the result of the auto-negotiation (if enabled),
-		 * this statement will evaluate to false */
-
+	if (dev_conf->init_phy == 0
+		|| dev_data->eff_link_speed == LINK_DOWN) {
+		/* Run-time data indicates 'link down' or PHY management
+		 * by this driver is disabled -> this indicates the initial
+		 * device initialization. Once the auxiliary thread has 
+		 * started and has picked up the result of the auto-
+		 * negotiation (if enabled), this statement will evaluate
+		 * to false. */
 		if (dev_conf->max_link_speed == LINK_10MBIT) {
 			out = 2500000;   /* Target frequency: 2.5 MHz */
 		} else if (dev_conf->max_link_speed == LINK_100MBIT) {
@@ -2927,9 +2992,8 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 			out = 125000000; /* Target frequency: 125 MHz */
 		}
 	} else if (dev_data->eff_link_speed != LINK_DOWN) {
-		/* Use the effective link speed instead of the maximum/nominal link
-		 * speed for clock configuration. */
-
+		/* Use the effective link speed instead of the maximum/nominal
+		 * link speed for clock configuration. */
 		if (dev_data->eff_link_speed == LINK_10MBIT) {
 			out = 2500000;   /* Target frequency: 2.5 MHz */
 		} else if (dev_data->eff_link_speed == LINK_100MBIT) {
@@ -2941,7 +3005,6 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 
 	if (div0 == 0 && div1 == 0) {
 		/* Both divisors == 0 -> auto-calculate the divisors */
-
 		for (div0 = 1; div0 < 64; div0++) {
 			for (div1 = 1; div1 < 64; div1++) {
 				tmp = ((in / div0) / div1);
@@ -2954,15 +3017,14 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 			}
 		}
 	} else {
-		LOG_DBG(
-			"eth_xlnx_gem_configure_clocks: GEM@0x%08X WARNING: "
-			"clock divisors div0/1 have non-zero values defined "
-			"in the system configuration (%u/%u), expect only the "
-			"nominal link speed to work!\n",
+		LOG_WRN(
+			"GEM@0x%08X clock divisors div0/1 have non-zero "
+			"values defined in the system configuration (%u/%u), "
+			"expect only the nominal link speed to work!",
 			dev_conf->base_addr, div0, div1);
 	}
 
-	#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 	
 	/* SLCR unlock */
 	sys_write32(ETH_XLNX_SLCR_UNLOCK_CONSTANT, ETH_XLNX_SLCR_UNLOCK_REGISTER);
@@ -3007,7 +3069,7 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 	/* SLCR lock */
 	sys_write32(ETH_XLNX_SLCR_LOCK_CONSTANT, ETH_XLNX_SLCR_LOCK_REGISTER);
 
-	#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
+#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 
 	/* Update the GEM_CLK_CTRL register, shared by all GEM instances.
 	 * Values not yet considered here: GEMx FIFO CLK selection, GEMx
@@ -3044,11 +3106,11 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 
 	sys_write32(reg_val, dev_conf->crl_apb_ref_ctrl_register_addr);
 
-	#endif /* CONFIG_SOC_XILINX_ZYNQ7000 / CONFIG_SOC_XILINX_ZYNQMP */
+#endif /* CONFIG_SOC_XILINX_ZYNQ7000 / CONFIG_SOC_XILINX_ZYNQMP */
 
 	LOG_DBG(
-		"eth_xlnx_gem_configure_clocks: GEM@0x%08X clock divisors "
-		"div0/1 set to: %u/%u for target frequency %u Hz\n",
+		"GEM@0x%08X clock divisors div0/1 %u/%u for target "
+		"freq %u Hz",
 		dev_conf->base_addr, div0, div1, out);
 }
 
@@ -3056,22 +3118,34 @@ static void eth_xlnx_gem_init_phy (struct device *dev)
 {
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
+	int detect_rc = 0;
 
-	LOG_DBG("eth_xlnx_gem_init_phy: GEM@0x%08X initializing PHY\n",
+	LOG_DBG("GEM@0x%08X attempting to initialize attached PHY",
 		dev_conf->base_addr);
 
-	eth_xlnx_gem_phy_detect(dev);
+	/* The phy_xlnx_gem_detect function checks if a valid PHY
+	 * ID is returned when reading the corresponding high / low
+	 * ID registers for all valid MDIO addresses. If a compatible
+	 * PHY is detected, the function writes a pointer to the
+	 * vendor-specific implementations of the PHY management
+	 * functions to the run-time device data struct, along with
+	 * the ID and the MDIO address of the detected PHY (dev_data->
+	 * phy_id, dev_data->phy_addr, dev_data->phy_access_api). */
+	detect_rc = phy_xlnx_gem_detect(dev);
 
-	if (dev_data->phy_id != 0x00000000 && dev_data->phy_id != 0xFFFFFFFF)
+	if (detect_rc == 0
+		&& dev_data->phy_id != 0x00000000
+		&& dev_data->phy_id != 0xFFFFFFFF
+		&& dev_data->phy_access_api != NULL)
 	{
-		eth_xlnx_gem_phy_reset(dev);
-		eth_xlnx_gem_phy_configure(dev);
+		/* A compatible PHY was detected -> reset & configure it */
+		dev_data->phy_access_api->phy_reset_func(dev);
+		dev_data->phy_access_api->phy_configure_func(dev);
+	} else {
+		LOG_WRN(
+			"GEM@0x%08X no compatible PHY detected", 
+			dev_conf->base_addr);
 	}
-
-	LOG_DBG(
-		"eth_xlnx_gem_init_phy: GEM@0x%08X PHY ID 0x%08X\n", 
-		dev_conf->base_addr,
-		dev_data->phy_id);
 }
 
 static void eth_xlnx_gem_configure_buffers (struct device *dev)
@@ -3079,11 +3153,11 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
 	struct eth_xlnx_gem_bd       *bdptr    = NULL;
-	uint32_t i = 0;
+	uint32_t buf_iter = 0;
 
 	/* Initial configuration of the RX/TX BD rings */
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0
 
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem0)))
 	{
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DMA_FIXED
@@ -3102,11 +3176,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 			dev_data->first_tx_buffer    = (uint8_t*)dma_area_gem0.tx_buffer;
 		#endif
 	}
+#endif
 
-	#endif
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1
-
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem1)))
 	{
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DMA_FIXED
@@ -3125,11 +3197,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 			dev_data->first_tx_buffer    = (uint8_t*)dma_area_gem1.tx_buffer;
 		#endif
 	}
+#endif
 
-	#endif
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2
-
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem2)))
 	{
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DMA_FIXED
@@ -3148,11 +3218,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 			dev_data->first_tx_buffer    = (uint8_t*)dma_area_gem2.tx_buffer;
 		#endif
 	}
+#endif
 
-	#endif
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3
-
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3
 	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem3)))
 	{
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DMA_FIXED
@@ -3171,54 +3239,60 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 			dev_data->first_tx_buffer    = (uint8_t*)dma_area_gem3.tx_buffer;
 		#endif
 	}
+#endif
 
-	#endif
-
-	/* Set initial RX BD data -> comp. Zynq-7000 TRM, Chapter 16.3.5, 
-	 * "Receive Buffer Descriptor List". The BD ring data other than the
-	 *  base RX/TX buffer pointers will be set in eth_xlnx_gem_iface_init() */
+	/* Set initial RX BD data -> comp. Zynq-7000 TRM, Chapter 16.3.5,
+	 * "Receive Buffer Descriptor List". The BD ring data other than
+	 * the base RX/TX buffer pointers will be set in eth_xlnx_gem_
+	 * iface_init() */
 	bdptr = dev_data->rxbd_ring.first_bd;
 
-	for (i = 0; i < (dev_conf->rxbd_count - 1); i++) {
-		/* clear 'used' bit -> BD is owned by the controller -> as per TRM */
+	for (buf_iter = 0; buf_iter < (dev_conf->rxbd_count - 1); buf_iter++) {
+		/* Clear 'used' bit -> BD is owned by the controller
+		 * -> as per TRM */
 		bdptr->ctrl = 0;
 		bdptr->addr = (uint32_t)((uint32_t)dev_data->first_rx_buffer +
-			(i * (uint32_t)dev_conf->rx_buffer_size));
+			(buf_iter * (uint32_t)dev_conf->rx_buffer_size));
 		++bdptr;
 	}
 
-	/* For the last BD, bit [1] must be OR'ed in the buffer memory address
-	   -> this is the 'wrap' bit indicating that this is the last BD in the ring.
-	   This location is used as bits [1..0] can't be part of the buffer address
-	   due to alignment requirements anyways. Watch out: TX BDs handle this
-	   differently, their wrap bit is located in the BD's control word! */
+	/* For the last BD, bit [1] must be OR'ed in the buffer memory
+	 * address -> this is the 'wrap' bit indicating that this is the
+	 * last BD in the ring. This location is used as bits [1..0] can't
+	 * be part of the buffer address due to alignment requirements
+	 * anyways. Watch out: TX BDs handle this differently, their wrap
+	 * bit is located in the BD's control word! */
 	bdptr->ctrl = 0; /* BD is owned by the controller */
 	bdptr->addr = (uint32_t)((uint32_t)dev_data->first_rx_buffer
-		+ (i * (uint32_t)dev_conf->rx_buffer_size)) | ETH_XLNX_GEM_RXBD_WRAP_BIT;
+		+ (buf_iter * (uint32_t)dev_conf->rx_buffer_size)) 
+		| ETH_XLNX_GEM_RXBD_WRAP_BIT;
 
 	/* Set initial TX BD data -> comp. Zynq-7000 TRM, Chapter 16.3.5, 
-	 * "Transmit Buffer Descriptor List". TX BD ring data has already been set
-	 * up in eth_xlnx_gem_iface_init() */
+	 * "Transmit Buffer Descriptor List". TX BD ring data has already
+	 * been set up in eth_xlnx_gem_iface_init() */
 	bdptr = dev_data->txbd_ring.first_bd;
 
-	for (i = 0; i < (dev_conf->txbd_count - 1); i++) {
+	for (buf_iter = 0; buf_iter < (dev_conf->txbd_count - 1); buf_iter++) {
 		/* Set 'used' bit.
-		 * This contradicts the TRM, according to which the bit should be
-		 * cleared, indicating management by the controller. However, if
-		 * the bit is cleared, each transmission completes with an error
-		 * flag set in the TXSR. TODO: investigate further? */
+		 * This contradicts the TRM, according to which the bit
+		 * should be cleared, indicating management by the controller.
+		 * However, if the bit is cleared, each transmission completes
+		 * with an error flag set in the TXSR.
+		 * TODO: investigate further? */
 		bdptr->ctrl = ETH_XLNX_GEM_TXBD_USED_BIT;
 		bdptr->addr = (uint32_t)((uint32_t)dev_data->first_tx_buffer
-			+ (i * (uint32_t)dev_conf->tx_buffer_size));
+			+ (buf_iter * (uint32_t)dev_conf->tx_buffer_size));
 		++bdptr;
 	}
 
-	/* For the last BD, set the 'wrap' bit indicating to the controller that 
-	 * this BD is the last one in the ring. -> For TX BDs, the 'wrap' bit 
-	 * isn't located in the address word, but in the control word instead */
-	bdptr->ctrl = (ETH_XLNX_GEM_TXBD_USED_BIT | ETH_XLNX_GEM_TXBD_WRAP_BIT);
+	/* For the last BD, set the 'wrap' bit indicating to the controller
+	 * that this BD is the last one in the ring. -> For TX BDs, the 'wrap'
+	 * bit isn't located in the address word, but in the control word
+	 * instead */
+	bdptr->ctrl = (ETH_XLNX_GEM_TXBD_USED_BIT
+		| ETH_XLNX_GEM_TXBD_WRAP_BIT);
 	bdptr->addr = (uint32_t)((uint32_t)dev_data->first_tx_buffer
-		+ (i * (uint32_t)dev_conf->tx_buffer_size));
+		+ (buf_iter * (uint32_t)dev_conf->tx_buffer_size));
 
 	/* Set free count/current index in the RX/TX BD ring data */
 	dev_data->rxbd_ring.next_to_process = 0;
@@ -3234,409 +3308,6 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 		dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
 	sys_write32((uint32_t)dev_data->txbd_ring.first_bd,
 		dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
-}
-
-static int eth_xlnx_gem_mdio_read (
-	uint32_t base_addr, uint8_t phy_addr, uint8_t reg_addr)
-{
-	uint32_t reg_val = 0;
-
-	/* MDIO read operation as described in Zynq-7000 TRM, Chapter 16.3.4, 
-	 * p. 517 */
-
-	/* Wait until gem.net_status[phy_mgmt_idle] == 1 before issuing the 
-	 * current command. TODO: This should preferrably have a time-out! */
-	do {
-		reg_val = sys_read32(base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_MDIO_IDLE_BIT) == 0);
-
-	/* Assemble & write the current read command to the gem.phy_maint 
-	 * register */
-
-	/* Set the bits constant for any operation */
-	reg_val  = ETH_XLNX_GEM_PHY_MAINT_CONST_BITS;
-	/* Indicate a read operation */
-	reg_val |= ETH_XLNX_GEM_PHY_MAINT_READ_OP_BIT;
-	/* PHY address */
-	reg_val |= (((uint32_t)phy_addr & ETH_XLNX_GEM_PHY_MAINT_PHY_ADDRESS_MASK)
-		<< ETH_XLNX_GEM_PHY_MAINT_PHY_ADDRESS_SHIFT);
-	/* Register address */
-	reg_val |= (((uint32_t)reg_addr & ETH_XLNX_GEM_PHY_MAINT_REGISTER_ID_MASK) 
-		<< ETH_XLNX_GEM_PHY_MAINT_REGISTER_ID_SHIFT);
-
-	sys_write32(reg_val, base_addr + ETH_XLNX_GEM_PHY_MAINTENANCE_OFFSET);
-
-	/* Wait until gem.net_status[phy_mgmt_idle] == 1 -> current command com-
-	 * pleted. TODO: This should preferrably have a time-out! */
-	do {
-		reg_val = sys_read32(base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_MDIO_IDLE_BIT) == 0);
-
-	/* Read the data returned by the PHY -> lower 16 bits of the PHY main-
-	 * tenance register */
-
-	reg_val = sys_read32(base_addr + ETH_XLNX_GEM_PHY_MAINTENANCE_OFFSET);
-	return (uint16_t)reg_val;
-}
-
-static void eth_xlnx_gem_mdio_write (
-	uint32_t base_addr, uint8_t phy_addr, uint8_t reg_addr, uint16_t value)
-{
-	uint32_t reg_val = 0;
-
-	/* MDIO write operation as described in Zynq-7000 TRM, chapter 16.3.4,
-	 * p. 517 */
-
-	/* Wait until gem.net_status[phy_mgmt_idle] == 1 before issuing the
-	 * current command. TODO: This should preferrably have a time-out! */
-	do {
-		reg_val = sys_read32(base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_MDIO_IDLE_BIT) == 0);
-
-	/* Assemble & write the current write command to the gem.phy_maint
-	 * register */
-
-	/* Set the bits constant for any operation */
-	reg_val  = ETH_XLNX_GEM_PHY_MAINT_CONST_BITS;
-	/* Indicate a read operation */
-	reg_val |= ETH_XLNX_GEM_PHY_MAINT_WRITE_OP_BIT;
-	/* PHY address */
-	reg_val |= (((uint32_t)phy_addr & ETH_XLNX_GEM_PHY_MAINT_PHY_ADDRESS_MASK) 
-		<< ETH_XLNX_GEM_PHY_MAINT_PHY_ADDRESS_SHIFT);
-	/* Register address */
-	reg_val |= (((uint32_t)reg_addr & ETH_XLNX_GEM_PHY_MAINT_REGISTER_ID_MASK) 
-		<< ETH_XLNX_GEM_PHY_MAINT_REGISTER_ID_SHIFT);
-	/* 16 bits of data for the destination register */
-	reg_val |= ((uint32_t)value & ETH_XLNX_GEM_PHY_MAINT_DATA_MASK);
-
-	sys_write32(reg_val, base_addr + ETH_XLNX_GEM_PHY_MAINTENANCE_OFFSET);
-
-	/* Wait until gem.net_status[phy_mgmt_idle] == 1 -> current command com-
-	 * pleted. TODO: This should preferrably have a time-out! */
-	do {
-		reg_val = sys_read32(base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
-	} while ((reg_val & ETH_XLNX_GEM_MDIO_IDLE_BIT) == 0);
-}
-
-static void eth_xlnx_gem_phy_detect (struct device *dev)
-{
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-
-	uint8_t  phy_addr = 0;
-	uint32_t phy_id   = 0;
-	uint16_t phy_data = 0;
-
-	/* PHY detection as described in Zynq-7000 TRM, chapter 16.3.4,
-	 * p. 517 */
-	for (phy_addr = 1; phy_addr <= 32; phy_addr++) {
-		phy_data  = eth_xlnx_gem_mdio_read(
-			dev_conf->base_addr, phy_addr, PHY_IDENTIFIER_1_REGISTER);
-		phy_id    = (((uint32_t)phy_data << 16) & 0xFFFF0000);
-		phy_data  = eth_xlnx_gem_mdio_read(
-			dev_conf->base_addr, phy_addr, PHY_IDENTIFIER_2_REGISTER);
-		phy_id   |= ((uint32_t)phy_data & 0x0000FFFF);
-
-		if (phy_id != 0x00000000 && phy_id != 0xFFFFFFFF) {
-			dev_data->phy_addr = phy_addr;
-			dev_data->phy_id   = phy_id;
-			LOG_DBG("eth_xlnx_gem_phy_detect: PHY detected at address "
-			"%hhu: ID 0x%08X", phy_addr, phy_id);
-
-			return;
-		}
-	}
-
-	LOG_DBG("eth_xlnx_gem_phy_detect: PHY auto-detection failed!");
-}
-
-static void eth_xlnx_gem_phy_reset (struct device *dev)
-{
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-	uint16_t phy_data = 0;
-
-	/*
-	 * PHY state machine reset as implemented in the PHY found on the ZedBoard:
-	 * https://www.marvell.com/documents/eoxwrbluvwybgxvagkkf/
-	 * Marvell Alaska 88E1510/88E1518/88E1512/88E1514 datasheet
-	 * Page 0, register address 0 = Copper control register, bit [15] = PHY
-	 * reset. Accessing the register 0/0 in a R/M/W fashion.
-	 */
-	phy_data  = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER);
-	phy_data |= 0x8000;  /* Reset bit */
-	phy_data &= ~0x1000; /* Auto-neg disable (for now) */
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER, phy_data);
-
-	/*
-	 * Bit [15] reverts to 0 once the reset is complete.
-	 * TODO: reset polling completion should preferrably have a time-out
-	 */
-	while ((phy_data & 0x8000) != 0) {
-		phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-			dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER);
-	}
-}
-
-static void eth_xlnx_gem_phy_configure (struct device *dev)
-{
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-
-	uint16_t phy_data      = 0;
-	uint16_t phy_data_gbit = 0;
-
-	/*
-	 * All register / mask data based on:
-	 * https://www.marvell.com/documents/eoxwrbluvwybgxvagkkf/
-	 * Marvell Alaska 88E1510/88E1518/88E1512/88E1514 datasheet
-	 */
-
-	/* 
-	 * Configure the system interface and media type (e.g. "RGMII to Copper").
-	 * TODO Make this value configurable via KConfig
-	 * THIS IS VENDOR-SPECIFIC -> only works on Zedboard PHY type Marvell
-	 * Alaska 88E15xx and related models!
-	 * Page 18, register address 20 = General Control Register 1,
-	 * bits [2..0] = mode configuration
-	 * NOTICE: a change of this value requires a subsequent software reset
-	 * command via the same register's bit [15]
-	 */
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr, 
-		PHY_COPPER_PAGE_SWITCH_REGISTER, PHY_GENERAL_CONTROL_1_PAGE);
-
-	phy_data  = eth_xlnx_gem_mdio_read(dev_conf->base_addr, 
-		dev_data->phy_addr, PHY_COPPER_PAGE_SWITCH_REGISTER);
-	phy_data  = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_GENERAL_CONTROL_1_REGISTER);
-
-	/* [2..0] 000 = RGMII (System Mode) to Copper */
-	phy_data &= ~(PHY_MODE_CONFIG_MASK << PHY_MODE_CONFIG_SHIFT);
-	phy_data |= 0;
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_GENERAL_CONTROL_1_REGISTER, phy_data);
-
-	/* [15] Mode Software Reset bit, affecting pages 6 and 18
-	 * Reset is performed immediately, bit [15] is self-clearing */
-	phy_data |= 0x8000;
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_GENERAL_CONTROL_1_REGISTER, phy_data);
-
-	/* Bit [15] reverts to 0 once the reset is complete.
-	 * TODO: reset polling completion should have a time-out */
-	while ((phy_data & 0x8000) != 0) {
-		phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-			dev_data->phy_addr, PHY_GENERAL_CONTROL_1_REGISTER);
-	}
-
-	/* Revert to register page 0 */
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_COPPER_PAGE_SWITCH_REGISTER, PHY_BASE_REGISTERS_PAGE);
-
-	/* 
-	 * Configure MDIX
-	 * TODO Make this value configurable via KConfig
-	 * THIS IS VENDOR-SPECIFIC -> only works on Zedboard PHY type Marvell
-	 * Alaska 88E15xx and related models!
-	 * Page 0, register address 16 = Copper specific control register 1,
-	 * bits [6..5] = MDIO crossover mode.
-	 * NOTICE: a change of this value requires a subsequent software reset
-	 * command via Copper Control Register's bit [15] 
-	 */
-
-	/* [6..5] 11 = Enable auto cross over detection */
-	phy_data  = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_CONTROL_1_REGISTER);
-	phy_data &= ~(PHY_MDIX_CONFIG_MASK << PHY_MDIX_CONFIG_SHIFT);
-	phy_data |= (0x03 << PHY_MDIX_CONFIG_SHIFT);
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_COPPER_CONTROL_1_REGISTER, phy_data);
-
-	/* 
-	 * Configure the Copper Interrupt Enable Register.
-	 * -> all bits contained herein will be retained during the upcoming 
-	 * software reset operation.
-	 * Page 0, register address 18 = Copper Specific Interrupt Enable Register,
-	 * bit [14] = Speed changed interrupt enable,
-	 * bit [13] = Duplex changed interrupt enable,
-	 * bit [11] = Auto-negotiation completed interrupt enable,
-	 * bit [10] = Link status changed interrupt enable */
-	phy_data =   PHY_COPPER_SPEED_CHANGED_INTERRUPT_BIT
-			   | PHY_COPPER_DUPLEX_CHANGED_INTERRUPT_BIT
-			   | PHY_COPPER_AUTONEG_COMPLETED_INTERRUPT_BIT
-			   | PHY_COPPER_LINK_STATUS_CHANGED_INTERRUPT_BIT;
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_COPPER_INTERRUPT_ENABLE_REGISTER, phy_data);
-
-	/* Page 0 / Reg 0 [15] Copper Software Reset bit, affecting pages 0, 2, 3,
-	 * 5, 7. Reset is performed immediately, bit [15] is self-clearing */
-	phy_data  = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER);
-	phy_data |= 0x8000; 
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_COPPER_CONTROL_REGISTER, phy_data);
-
-	/* Bit [15] reverts to 0 once the reset is complete.
-	 * TODO: reset polling completion should preferrably have a time-out */
-	while ((phy_data & 0x8000) != 0)
-	{
-		phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-			dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER);
-	}
-
-	/* Clear the interrupt status register before advertising the supported
-	 * link speed(s) */
-	phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr, 
-		dev_data->phy_addr, PHY_COPPER_INTERRUPT_STATUS_REGISTER);
-
-	/* Set what link speeds shall be advertised during auto-negotiation,
-	 * re-enable auto-negotiation. PHY link speed advertisement configuration
-	 * as described in Zynq-7000 TRM, chapter 16.3.4, p. 517 */
-
-	/* 
-	 * Advertise the link speed from the device configuration & perform
-	 * auto-negotiation. This process involves:
-	 * 
-	 * Page 0, register address 4 =
-	 *     Copper Auto-Negotiation Advertisement Register,
-	 * Page 0, register address 0 =
-	 *     Copper Control Register, bit [15] = Reset -> apply all changes
-	 *     made regarding advertisement,
-	 * Page 0, register address 9 =
-	 *     1000BASE-T Control Register (if link speed = 1GBit/s),
-	 * Page 0, register address 1 =
-	 *     Copper Status Register, bit [5] = Copper Auto-Negotiation
-	 *     Complete
-	 */
-
-	/* Advertise the speed & duplex specified in the device configuration data
-	 * -> targets: registers 4 & 9 */
-	phy_data       = 0x01; /* [4..0] = Selector field, 00001 = 802.3 */
-	phy_data_gbit  = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_1000BASET_CONTROL_REGISTER);
-
-	if (dev_conf->enable_fdx == 1) {
-		if (dev_conf->max_link_speed == LINK_1GBIT) {
-			phy_data_gbit  = (1 << 9);  /* Advertise 1 GBit/s, full duplex */
-			if (dev_conf->phy_advertise_lower == 1) {
-				phy_data  |= (1 << 8); /* 100BASE-TX, full duplex */
-				phy_data  |= (1 << 6); /* 10BASE-TX, full duplex */
-			}
-		} else if (dev_conf->max_link_speed == LINK_100MBIT) {
-			phy_data      |= (1 << 8); /* 100BASE-TX, full duplex */
-			if (dev_conf->phy_advertise_lower == 1) {
-				phy_data  |= (1 << 6); /* 10BASE-TX, full duplex */
-			}
-			phy_data_gbit &= ~(0x0300); /* clear 1000BASE-TX advert. bits */
-		} else if (dev_conf->max_link_speed == LINK_10MBIT) {
-			phy_data      |= (1 << 6);  /* 10BASE-TX, full duplex */
-			phy_data_gbit &= ~(0x0300); /* clear 1000BASE-TX advert. bits */
-		}
-	} else {
-		if (dev_conf->max_link_speed == LINK_1GBIT) {
-			phy_data_gbit  = (1 << 8);  /* Advertise 1 GBit/s, half duplex */ 
-			if (dev_conf->phy_advertise_lower == 1) {
-				phy_data  |= (1 << 7);  /* 100BASE-TX, half duplex */
-				phy_data  |= (1 << 5);  /* 10BASE-TX, half duplex */
-			}
-		} else if (dev_conf->max_link_speed == LINK_100MBIT) {
-			phy_data      |= (1 << 7);  /* 100BASE-TX, half duplex */
-			if (dev_conf->phy_advertise_lower == 1) {
-				phy_data  |= (1 << 5);  /* 10BASE-TX, half duplex */
-			}
-			phy_data_gbit &= ~(0x0300); /* clear 1000BASE-TX advert. bits */
-		} else if (dev_conf->max_link_speed == LINK_10MBIT) {
-			phy_data      |= (1 << 5);  /* 10BASE-TX, half duplex */
-			phy_data_gbit &= ~(0x0300); /* clear 1000BASE-TX advert. bits */
-		}
-	}
-
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_1000BASET_CONTROL_REGISTER, phy_data_gbit);
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_COPPER_AUTONEG_ADV_REGISTER, phy_data);
-
-	/* Page 0 / Reg 0 [15] Copper Software Reset bit, affecting pages
-	 * 0, 2, 3, 5, 7. Reset is performed immediately, bit [15] is self-
-	 * clearing */
-	phy_data  = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER);
-	phy_data |= 0x8000; /* Reset bit */
-	phy_data |= 0x1000; /* Enable auto-negotiation */
-	eth_xlnx_gem_mdio_write(dev_conf->base_addr, dev_data->phy_addr,
-		PHY_COPPER_CONTROL_REGISTER, phy_data);
-
-	/* Bit [15] reverts to 0 once the reset is complete.
-	 * TODO: reset polling completion should preferrably have a time-out */
-	while ((phy_data & 0x8000) != 0) {
-		phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-			dev_data->phy_addr, PHY_COPPER_CONTROL_REGISTER);
-	}
-
-	/* Set the link speed to 'link down' for now, once auto-negotiation
-	 * is complete, the result will be handled by the auxiliary thread */
-	dev_data->eff_link_speed = LINK_DOWN;
-}
-
-static uint16_t eth_xlnx_gem_phy_poll_int_status (struct device *dev)
-{
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-	
-	uint16_t phy_data = 0;
-
-	phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_INTERRUPT_STATUS_REGISTER);
-	return phy_data;
-}
-
-static uint8_t eth_xlnx_gem_phy_poll_link_status (struct device *dev)
-{
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-	
-	uint16_t phy_data = 0;
-
-	phy_data = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_STATUS_REGISTER);
-	return ((phy_data >> PHY_COPPER_LINK_STATUS_BIT_SHIFT) & 0x01);
-}
-
-static enum eth_xlnx_link_speed eth_xlnx_gem_phy_poll_link_speed (
-	struct device *dev) 
-{
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-
-	enum eth_xlnx_link_speed link_speed = LINK_DOWN;
-	uint16_t phy_data = 0;
-
-	phy_data   = eth_xlnx_gem_mdio_read(dev_conf->base_addr,
-		dev_data->phy_addr, PHY_COPPER_STATUS_1_REGISTER);
-	phy_data >>= PHY_LINK_SPEED_SHIFT;
-	phy_data  &= PHY_LINK_SPEED_MASK;
-
-	/* Link speed bit masks:
-	 * comp. Marvell Alaska PHY 88E1510/88E1518/88E1512/88E1514 datasheet,
-	 * Table 77 */
-	switch (phy_data) {
-		case 0:
-			link_speed = LINK_10MBIT;
-			break;
-		case 1:
-			link_speed = LINK_100MBIT;
-			break;
-		case 2:
-			link_speed = LINK_1GBIT;
-			break;
-		default:
-			link_speed = LINK_DOWN;
-			break;
-	};
-
-	return link_speed;
 }
 
 /* EOF */

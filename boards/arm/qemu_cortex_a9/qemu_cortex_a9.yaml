@@ -23,5 +23,4 @@ testing:
   default: true
   ignore_tags:
     - bluetooth
-    - interrupt
     - gpio

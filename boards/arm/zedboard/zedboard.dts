@@ -87,3 +87,8 @@
 &gpio1 {
 	status = "okay";
 };
+
+&ttc0 {
+	status = "okay";
+	clock-frequency = <111110000>;
+};

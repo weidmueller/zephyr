@@ -45,14 +45,17 @@
 
 #if defined(CONFIG_FPU) \
 	&& defined(CONFIG_FPU_SHARING) \
-	&& defined(CONFIG_ARMV7_A_FP_VFPV3_D16)
+	&& (defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP))
 #define _preempt_float_offset_to_d00 \
 	_thread_offset_to_preempt_float
-#define _preempt_float_offset_to_d16 \
-	(_thread_offset_to_preempt_float + ___preempt_float_t_d16_OFFSET)
 #define _preempt_float_offset_to_fpscr \
 	(_thread_offset_to_preempt_float + ___preempt_float_t_fpscr_OFFSET)
-#endif
+#if defined(CONFIG_ARMV7_A_FP)
+#define _preempt_float_offset_to_d16 \
+	(_thread_offset_to_preempt_float + ___preempt_float_t_d16_OFFSET)
+#endif /* CONFIG_ARMV7_A_FP */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING &&
+	(CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP) */
 
 /* end - threads */
 

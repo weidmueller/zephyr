@@ -145,6 +145,7 @@ SECTIONS
     } GROUP_LINK_IN(ROMABLE_REGION)
 
     _image_text_end = .;
+    _image_text_size = _image_text_end - _image_text_start;
 
 #if defined (CONFIG_CPLUSPLUS)
     SECTION_PROLOGUE(.ARM.extab,,)
@@ -204,6 +205,7 @@ SECTIONS
 #include <linker/cplusplus-rom.ld>
 
     _image_rodata_end = .;
+    _image_rodata_size = _image_rodata_end - _image_rodata_start;
     MPU_ALIGN(_image_rodata_end -_image_rom_start);
     _image_rom_end = .;
 

@@ -144,11 +144,10 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 #endif /* CONFIG_USERSPACE */
 #endif /* CONFIG_USERSPACE || CONFIG_FPU_SHARING */
 
-#if defined(CONFIG_FPU) \
-	&& defined(CONFIG_FPU_SHARING) \
-	&& defined(CONFIG_ARMV7_A_FP_VFPV3_D16)
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING) \
+	&& (defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP))
 
-	thread->arch.preempt_float.fpexc = (1 << 30); /* EN bit */
+	thread->arch.preempt_float.fpexc = FPEXC_EN_Msk; /* EN bit */
 	thread->arch.preempt_float.fpscr = 0;
 
 	/*
@@ -168,27 +167,30 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	 *                  default = 00b (round to nearest).
 	 */
 
-	#ifdef CONFIG_ARM_FPU_VFPV3_D16_AHP_ALT
-	thread->arch.preempt_float.fpscr |= (1 << 26);
+	#ifdef CONFIG_ARMV7_FP_AHP_ALT
+	thread->arch.preempt_float.fpscr |= FPSCR_AHP_Msk;
 	#endif
 
-	#ifdef CONFIG_ARM_FPU_VFPV3_D16_NAN_RETURN_NAN
-	thread->arch.preempt_float.fpscr |= (1 << 25);
+	#ifdef CONFIG_ARMV7_FP_NAN_RETURN_NAN
+	thread->arch.preempt_float.fpscr |= FPSCR_DN_Msk;
 	#endif
 
-	#ifdef CONFIG_ARM_FPU_VFPV3_D16_FTZ_FLUSH
-	thread->arch.preempt_float.fpscr |= (1 << 24);
+	#ifdef CONFIG_ARMV7_FP_FTZ_FLUSH
+	thread->arch.preempt_float.fpscr |= FPSCR_FZ_Msk;
 	#endif
 
-	#if defined(CONFIG_ARM_FPU_VFPV3_D16_ROUNDING_RP)
-	thread->arch.preempt_float.fpscr |= (1 << 22);
-	#elif defined(CONFIG_ARM_FPU_VFPV3_D16_ROUNDING_RM)
-	thread->arch.preempt_float.fpscr |= (2 << 22);
-	#elif defined(CONFIG_ARM_FPU_VFPV3_D16_ROUNDING_RZ)
-	thread->arch.preempt_float.fpscr |= (3 << 22);
+	#if defined(CONFIG_ARMV7_FP_ROUNDING_RN)
+	thread->arch.preempt_float.fpscr |= FPSCR_Mode_NEAREST;
+	#elif defined(CONFIG_ARMV7_FP_ROUNDING_RP)
+	thread->arch.preempt_float.fpscr |= FPSCR_Mode_PLUSINF;
+	#elif defined(CONFIG_ARMV7_FP_ROUNDING_RM)
+	thread->arch.preempt_float.fpscr |= FPSCR_Mode_MINUSINF;
+	#elif defined(CONFIG_ARMV7_FP_ROUNDING_RZ)
+	thread->arch.preempt_float.fpscr |= FPSCR_Mode_ZERO;
 	#endif
 
-#endif /* CONFIG_FPU && CONFIG_FPU_SHARING && CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING && 
+	(CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP)) */
 
 	/* swap_return_value can contain garbage */
 
@@ -382,6 +384,10 @@ uint32_t z_check_thread_stack_fail(const uint32_t fault_addr, const uint32_t psp
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
 int arch_float_disable(struct k_thread *thread)
 {
+#if defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP)
+	/* Per-thread FPU enable/disable not supported on Cortex-A/-R */
+	return -EINVAL;
+#else
 	if (thread != _current) {
 		return -EINVAL;
 	}
@@ -401,16 +407,7 @@ int arch_float_disable(struct k_thread *thread)
 
 	thread->base.user_options &= ~K_FP_REGS;
 
-#ifndef CONFIG_CPU_CORTEX_A
 	__set_CONTROL(__get_CONTROL() & (~CONTROL_FPCA_Msk));
-#else
-	uint32_t reg_val = 0;
-
-	__asm__ __volatile__ ("vmrs %0, fpexc" : "=r"(reg_val));
-	reg_val &= ~(1 << 30); /* Clear the EN bit */
-	__asm__ __volatile__ ("vmsr fpexc,%0" : : "r"(reg_val));
-	__asm__ __volatile__ ("isb");
-#endif /* !CONFIG_CPU_CORTEX_A */
 
 	/* No need to add an ISB barrier after setting the CONTROL
 	 * register; arch_irq_unlock() already adds one.
@@ -419,6 +416,7 @@ int arch_float_disable(struct k_thread *thread)
 	arch_irq_unlock(key);
 
 	return 0;
+#endif /* CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP */
 }
 #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
@@ -427,7 +425,8 @@ void arch_switch_to_main_thread(struct k_thread *main_thread,
 				size_t main_stack_size,
 				k_thread_entry_t _main)
 {
-#if defined(CONFIG_FPU) && !defined(CONFIG_CPU_CORTEX_A)
+#if defined(CONFIG_FPU)
+#if !(defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP))
 	/* Initialize the Floating Point Status and Control Register when in
 	 * Unshared FP Registers mode (In Shared FP Registers mode, FPSCR is
 	 * initialized at thread creation for threads that make use of the FP).
@@ -437,40 +436,41 @@ void arch_switch_to_main_thread(struct k_thread *main_thread,
 	/* In Sharing mode clearing FPSCR may set the CONTROL.FPCA flag. */
 	__set_CONTROL(__get_CONTROL() & (~(CONTROL_FPCA_Msk)));
 	__ISB();
-#endif /* CONFIG_FP_SHARING */
-#elif defined(CONFIG_FPU) && defined(CONFIG_CPU_CORTEX_A)
-#ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+#endif /* CONFIG_FPU_SHARING */
+#elif defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP)
 
 	/* Same as above in arch_new_thread: set the initial contents of
 	 * the FPSCR register. */
 
-	uint32_t reg_val = 0;
+	uint32_t fpscr_reg = 0;
 
-	#ifdef CONFIG_ARM_FPU_VFPV3_D16_AHP_ALT
-	reg_val |= (1 << 26);
+	#ifdef CONFIG_ARMV7_FP_AHP_ALT
+	fpscr_reg |= FPSCR_AHP_Msk;
 	#endif
 
-	#ifdef CONFIG_ARM_FPU_VFPV3_D16_NAN_RETURN_NAN
-	reg_val |= (1 << 25);
+	#ifdef CONFIG_ARMV7_FP_NAN_RETURN_NAN
+	fpscr_reg |= FPSCR_DN_Msk;
 	#endif
 
-	#ifdef CONFIG_ARM_FPU_VFPV3_D16_FTZ_FLUSH
-	reg_val |= (1 << 24);
+	#ifdef CONFIG_ARMV7_FP_FTZ_FLUSH
+	fpscr_reg |= FPSCR_FZ_Msk;
 	#endif
 
-	#if defined(CONFIG_ARM_FPU_VFPV3_D16_ROUNDING_RP)
-	reg_val |= (1 << 22);
-	#elif defined(CONFIG_ARM_FPU_VFPV3_D16_ROUNDING_RM)
-	reg_val |= (2 << 22);
-	#elif defined(CONFIG_ARM_FPU_VFPV3_D16_ROUNDING_RZ)
-	reg_val |= (3 << 22);
+	#if defined(CONFIG_ARMV7_FP_ROUNDING_RN)
+	fpscr_reg |= FPSCR_Mode_NEAREST;
+	#elif defined(CONFIG_ARMV7_FP_ROUNDING_RP)
+	fpscr_reg |= FPSCR_Mode_PLUSINF;
+	#elif defined(CONFIG_ARMV7_FP_ROUNDING_RM)
+	fpscr_reg |= FPSCR_Mode_MINUSINF;
+	#elif defined(CONFIG_ARMV7_FP_ROUNDING_RZ)
+	fpscr_reg |= FPSCR_Mode_ZERO;
 	#endif
 
-	__asm__ __volatile__ ("vmsr fpscr,%0" : : "r"(reg_val));
-	__asm__ __volatile__ ("isb");
+	__set_FPSCR(fpscr_reg);
+	__ISB();
 
-#endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
-#endif /* CONFIG_FPU && !CONFIG_CPU_CORTEX_A */
+#endif /* !(CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP) */
+#endif /* CONFIG_FPU */
 
 #ifdef CONFIG_ARM_MPU
 	/* Configure static memory map. This will program MPU regions,

@@ -38,10 +38,12 @@ GEN_OFFSET_SYM(_thread_arch_t, priv_stack_start);
 
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
 GEN_OFFSET_SYM(_thread_arch_t, preempt_float);
-#ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+#if defined(CONFIG_ARMV7_A_FP)
 GEN_OFFSET_SYM(_preempt_float_t, d16);
+#endif /* CONFIG_ARMV7_A_FP */
+#if defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP)
 GEN_OFFSET_SYM(_preempt_float_t, fpscr);
-#endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#endif /* CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP */
 #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 GEN_OFFSET_SYM(_basic_sf_t, a1);
@@ -54,12 +56,12 @@ GEN_OFFSET_SYM(_basic_sf_t, pc);
 GEN_OFFSET_SYM(_basic_sf_t, xpsr);
 
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
-#ifndef CONFIG_ARMV7_A_FP_VFPV3_D16
+#if !(defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP))
 GEN_OFFSET_SYM(_esf_t, s);
-#else /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#else /* CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP */
 GEN_OFFSET_SYM(_esf_t, d);
 GEN_OFFSET_SYM(_esf_t, fpexc);
-#endif /* !CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#endif /* !(CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP) */
 GEN_OFFSET_SYM(_esf_t, fpscr);
 #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 

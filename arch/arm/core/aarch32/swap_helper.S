@@ -114,16 +114,18 @@ out_fp_endif:
     cps #MODE_SYS
     stm r0, {r4-r11, sp}
 
-    #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
-    #ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+#if defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP)
 
     /* addr of floating point reg d00 in _current->arch.preempt_float in r0 */
     add r0, r2, #_preempt_float_offset_to_d00
     vstmia r0, {d0-d15}
 
+#if defined(CONFIG_ARMV7_A_FP)
     /* addr of floating point reg d16 in _current->arch.preempt_float in r0 */
     add r0, r2, #_preempt_float_offset_to_d16
     vstmia r0, {d16-d31}
+#endif /* CONFIG_ARMV7_A_FP */
 
     /* addr of floating point reg fpscr in _current->arch.preempt_float in r3 */
     add r3, r2, #_preempt_float_offset_to_fpscr
@@ -133,8 +135,8 @@ out_fp_endif:
 
     ldr r1, =_kernel
 
-    #endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
-    #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
+#endif /* CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
     cps #MODE_SVC
 #else
@@ -344,16 +346,18 @@ _thread_irq_disabled:
     cps #MODE_SYS
     ldm r0, {r4-r11, sp}
 
-    #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
-    #ifdef CONFIG_ARMV7_A_FP_VFPV3_D16
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+#if defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP)
 
     /* addr of floating point reg d00 in _current->arch.preempt_float in r0 */
     add r0, r2, #_preempt_float_offset_to_d00
     vldmia r0, {d0-d15}
 
+#if defined(CONFIG_ARMV7_A_FP)
     /* addr of floating point reg d16 in _current->arch.preempt_float in r0 */
     add r0, r2, #_preempt_float_offset_to_d16
     vldmia r0, {d16-d31}
+#endif /* CONFIG_ARMV7_A_FP */
 
     /* addr of floating point reg fpscr in _current->arch.preempt_float in r3 */
     add r3, r2, #_preempt_float_offset_to_fpscr
@@ -363,8 +367,8 @@ _thread_irq_disabled:
 
     ldr r1, =_kernel
 
-    #endif /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
-    #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
+#endif /* CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
     cps #MODE_SVC
 #else

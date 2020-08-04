@@ -77,7 +77,7 @@ void __weak relocate_vector_table(void)
 
 #endif /* CONFIG_CPU_CORTEX_M_HAS_VTOR */
 
-#if defined(CONFIG_CPU_HAS_FPU) && !defined(CONFIG_ARMV7_A_FP_VFPV3_D16)
+#if defined(CONFIG_CPU_HAS_FPU) && defined(CONFIG_CPU_CORTEX_M)
 static inline void z_arm_floating_point_init(void)
 {
 	/*
@@ -159,18 +159,15 @@ static inline void z_arm_floating_point_init(void)
 	__set_CONTROL(__get_CONTROL() & (~(CONTROL_FPCA_Msk)));
 #endif
 }
-#elif defined(CONFIG_CPU_HAS_FPU) && defined(CONFIG_ARMV7_A_FP_VFPV3_D16)
+#elif defined(CONFIG_CPU_HAS_FPU) && !defined(CONFIG_CPU_CORTEX_M)
 static inline void z_arm_floating_point_init(void)
 {
 	#ifdef CONFIG_FPU
 
-	uint32_t reg_val = 0;
+	uint32_t cpacr_reg = 0;
+	uint32_t fpexc_reg = 0;
 
-	/*
-	 * TODO: use CMSIS for control register access as seen above for 
-	 * Cortex-M. 
-	 * TODO: configure NSACR once non-secure mode is supported.
-	 */
+	/* TODO: configure NSACR once non-secure mode is supported. */
 
 	/*
 	 * CPACR : Coprocessor Access Control Register -> CP15 1/0/2
@@ -186,10 +183,12 @@ static inline void z_arm_floating_point_init(void)
 	 * 00b = No access.
 	 */
 
-	__asm__ __volatile__ ("mrc p15,0,%0,c1,c0,2" : "=r"(reg_val));
-	reg_val |= ((3 << 22) | (3 << 20)); /* Enable full access to CP10, CP11 */
-	__asm__ __volatile__ ("mcr p15,0,%0,c1,c0,2" : : "r"(reg_val));
-	__asm__ __volatile__ ("isb");
+	/* R/M/W CPACR: Enable full access to CP10, CP11 */
+	cpacr_reg  = __get_CPACR();
+	cpacr_reg &= ~(CPACR_CP10_Msk | CPACR_CP11_Msk );
+	cpacr_reg |= (CPACR_CP10_FULL_ACCESS | CPACR_CP11_FULL_ACCESS);
+	__set_CPACR(cpacr_reg);
+	__ISB();
 
 	/*
 	 * FPEXC: Floating-Point Exception Control register
@@ -203,18 +202,19 @@ static inline void z_arm_floating_point_init(void)
 	 *               subarchitecture defined. If EX=0, the following registers
 	 *               contain the complete current state information of the FPU
 	 *               and must therefore be saved during a context switch:
-	 *               * D0-D15
-	 *               * D16-D31 if implemented
+	 *               * D00-D15 / S00-S31 (VFPv3-D32 and VFPv3-D16)
+	 *               * D16-D31 if implemented (VFPv3-D32 only)
 	 *               * FPSCR
 	 *               * FPEXC.
 	 * [30] EN bit = Advanced SIMD/Floating Point Extensions enable bit.
 	 * [29..00]    = Subarchitecture defined -> not relevant here.
 	 */
 
-	__asm__ __volatile__ ("vmrs %0, fpexc" : "=r"(reg_val));
-	reg_val |= (1 << 30); /* Set the EN bit */
-	__asm__ __volatile__ ("vmsr fpexc,%0" : : "r"(reg_val));
-	__asm__ __volatile__ ("isb");
+	fpexc_reg = __get_FPEXC();
+	fpexc_reg &= ~(FPEXC_EX_Msk);
+	fpexc_reg |= FPEXC_EN_Msk; /* Set the EN bit */
+	__set_FPEXC(fpexc_reg);
+	__ISB();
 
 	/*
 	 * The contents of the FPSCR register are written:
@@ -224,7 +224,7 @@ static inline void z_arm_floating_point_init(void)
 
 	#endif /* CONFIG_FPU */
 }
-#endif /* CONFIG_CPU_HAS_FPU && !CONFIG_ARMV7_A_FP_VFPV3_D16 */
+#endif /* CONFIG_CPU_HAS_FPU && !CONFIG_CPU_CORTEX_M */
 
 extern FUNC_NORETURN void z_cstart(void);
 /**

@@ -85,15 +85,19 @@ struct __esf {
 		uint32_t xpsr;
 	} basic;
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
-#ifndef CONFIG_ARMV7_A_FP_VFPV3_D16
+#if !(defined(CONFIG_ARMV7_A_FP) || defined(CONFIG_ARMV7_R_FP))
 	float s[16];
 	uint32_t fpscr;
 	uint32_t undefined;
-#else /* CONFIG_ARMV7_A_FP_VFPV3_D16 */
-	double d[32]; /* D0..D31 */
-	uint32_t fpexc;
+#else /* CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP */
+#if defined(CONFIG_ARMV7_A_FP) /* VFPv3-D32 */
+	double d[32]; /* D00..D31 */
+#elif defined(CONFIG_ARMV7_R_FP) /* VFPv3-D16 */
+	double d[16]; /* D00..D15 */
+#endif /* CONFIG_ARMV7_A_FP*/
 	uint32_t fpscr;
-#endif /* !CONFIG_ARMV7_A_FP_VFPV3_D16*/
+	uint32_t fpexc;
+#endif /* !(CONFIG_ARMV7_A_FP || CONFIG_ARMV7_R_FP))*/
 #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 };
 

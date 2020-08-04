@@ -29,7 +29,7 @@ config ARMV7_A
 	select ATOMIC_OPERATIONS_BUILTIN
 	select ISA_ARM
 	select ARMV7_A_MMU if CPU_HAS_ARM_MMU
-	select ARMV7_A_FP_VFPV3_D16 if CPU_HAS_FPU_DOUBLE_PRECISION
+	select ARMV7_A_FP if CPU_HAS_FPU_DOUBLE_PRECISION
 	help
 	  This option signifies the use of an ARMv7-A processor
 	  implementation.
@@ -40,12 +40,12 @@ config ARMV7_A
 	  based on a Memory Management Unit (MMU), and supports the Arm (A32) and 
 	  Thumb (T32) instruction sets.
 
-config ARMV7_A_FP_VFPV3_D16
+config ARMV7_A_FP
 	bool
 	depends on ARMV7_A
 	help
 	  This option signifies the use of an ARMv7-A processor implementation
-	  supporting the VFPv3-D16 Floating-Point Extension.
+	  supporting the VFPv3-D32 Floating-Point Extension.
 
 config ARMV7_A_MMU
 	bool
@@ -88,81 +88,6 @@ config GEN_ISR_TABLES
 config GEN_IRQ_VECTOR_TABLE
 	default n
 
-if ARMV7_A_FP_VFPV3_D16
-
-choice
-	prompt "FPU Half-precision format"
-
-config ARM_FPU_VFPV3_D16_AHP_IEEE
-	bool "IEEE half-precision format"
-	help
-	  IEEE half-precision format.
-
-config ARM_FPU_VFPV3_D16_AHP_ALT
-	bool "Alternative half-precision"
-	help
-	  Alternative half-precision.
-
-endchoice
-
-choice
-	prompt "FPU Default NaN mode (doesn't apply to advanced SIMD arithmetic)"
-
-config ARM_FPU_VFPV3_D16_NAN_PROPAGATE
-	bool "Propagate NaN operands"
-	help
-	  Propagate NaN operands through to the output of a floating point operation.
-
-config ARM_FPU_VFPV3_D16_NAN_RETURN_NAN
-	bool "Return default NaN"
-	help
-	  Any operation involving one or more NaNs returns the default NaN.
-
-endchoice
-
-choice
-	prompt "FPU Flush to zero mode (doesn't apply to advanced SIMD arithmetic)"
-
-config ARM_FPU_VFPV3_D16_FTZ_DISABLED
-	bool "Disabled, IEEE 754 compliant behavior"
-	help
-	  Flush to zero mode disabled. Behavior of the floating point system is
-	  fully compliant with the IEEE 754 standard.
-
-config ARM_FPU_VFPV3_D16_FTZ_FLUSH
-	bool "Enabled"
-	help
-	  Flush to zero mode enabled.
-
-endchoice
-
-choice
-	prompt "FPU Rounding mode (doesn't apply to advanced SIMD arithmetic)"
-
-config ARM_FPU_VFPV3_D16_ROUNDING_RN
-	bool "Round to nearest"
-	help
-	  Round to nearest mode.
-
-config ARM_FPU_VFPV3_D16_ROUNDING_RP
-	bool "Round to plus infinity"
-	help
-	  Round to plus infinity mode.
-
-config ARM_FPU_VFPV3_D16_ROUNDING_RM
-	bool "Round to minus infinity"
-	help
-	  Round to minus infinity mode.
-
-config ARM_FPU_VFPV3_D16_ROUNDING_RZ
-	bool "Round to zero"
-	help
-	  Round to zero mode.
-
-endchoice
-
-endif # ARMV7_A_FP_VFPV3_D16
-
 endif # CPU_CORTEX_A
 
 config CPU_CORTEX_R4
@@ -203,7 +128,7 @@ config ARMV7_R_FP
 	depends on ARMV7_R
 	help
 	  This option signifies the use of an ARMv7-R processor
-	  implementation supporting the Floating-Point Extension.
+	  implementation supporting the VFPv3-D16 Floating-Point Extension.
 
 config ARMV7_EXCEPTION_STACK_SIZE
 	int "Undefined Instruction and Abort stack size (in bytes)"
@@ -240,3 +165,90 @@ config GEN_IRQ_VECTOR_TABLE
 	default n
 
 endif # CPU_CORTEX_R
+
+# Floating Point Unit configuration options
+# Identical for VFPv3-D32 (Cortex-A) and VFPv3-D16 (Cortex-R, optional)
+
+menu "VFPv3(-D32/-D16) Floating Point Unit options"
+	depends on ARMV7_A_FP || ARMV7_R_FP
+
+choice
+	prompt "FPU Half-precision format"
+	depends on ARMV7_A_FP || ARMV7_R_FP
+	default ARMV7_FP_AHP_IEEE
+
+config ARMV7_FP_AHP_IEEE
+	bool "IEEE half-precision format"
+	help
+	  IEEE half-precision format.
+
+config ARMV7_FP_AHP_ALT
+	bool "Alternative half-precision"
+	help
+	  Alternative half-precision.
+
+endchoice
+
+choice
+	prompt "FPU Default NaN mode (doesn't apply to advanced SIMD arithmetic)"
+	depends on ARMV7_A_FP || ARMV7_R_FP
+	default ARMV7_FP_NAN_PROPAGATE
+
+config ARMV7_FP_NAN_PROPAGATE
+	bool "Propagate NaN operands"
+	help
+	  Propagate NaN operands through to the output of a floating point operation.
+
+config ARMV7_FP_NAN_RETURN_NAN
+	bool "Return default NaN"
+	help
+	  Any operation involving one or more NaNs returns the default NaN.
+
+endchoice
+
+choice
+	prompt "FPU Flush to zero mode (doesn't apply to advanced SIMD arithmetic)"
+	depends on ARMV7_A_FP || ARMV7_R_FP
+	default ARMV7_FP_FTZ_DISABLED
+
+config ARMV7_FP_FTZ_DISABLED
+	bool "Disabled, IEEE 754 compliant behavior"
+	help
+	  Flush to zero mode disabled. Behavior of the floating point system is
+	  fully compliant with the IEEE 754 standard.
+
+config ARMV7_FP_FTZ_FLUSH
+	bool "Enabled"
+	help
+	  Flush to zero mode enabled.
+
+endchoice
+
+choice
+	prompt "FPU Rounding mode (doesn't apply to advanced SIMD arithmetic)"
+	depends on ARMV7_A_FP || ARMV7_R_FP
+	default ARMV7_FP_ROUNDING_RN
+
+config ARMV7_FP_ROUNDING_RN
+	bool "Round to nearest"
+	help
+	  Round to nearest mode.
+
+config ARMV7_FP_ROUNDING_RP
+	bool "Round to plus infinity"
+	help
+	  Round to plus infinity mode.
+
+config ARMV7_FP_ROUNDING_RM
+	bool "Round to minus infinity"
+	help
+	  Round to minus infinity mode.
+
+config ARMV7_FP_ROUNDING_RZ
+	bool "Round to zero"
+	help
+	  Round to zero mode.
+
+endchoice
+
+endmenu

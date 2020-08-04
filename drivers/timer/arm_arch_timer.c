@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019 Carlo Caione <ccaione@baylibre.com>
- *
+ * Copyright (c) 2020 Weidmueller Interface GmbH & Co. KG
+ * 
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -24,7 +25,7 @@ static void arm_arch_timer_compare_isr(void *arg)
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
+#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
 
 	/* Workaround required for Cortex-A9 MPCore errata 740657
 	 * comp. ARM Cortex-A9 processors Software Developers Errata Notice,
@@ -38,11 +39,10 @@ static void arm_arch_timer_compare_isr(void *arg)
 		return;
 	}
 
-	#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
+#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
 
 	uint64_t curr_cycle = arm_arch_timer_count();
 	uint32_t delta_ticks = (uint32_t)((curr_cycle - last_cycle) / CYC_PER_TICK);
-
 	last_cycle += delta_ticks * CYC_PER_TICK;
 
 	if (!IS_ENABLED(CONFIG_TICKLESS_KERNEL)) {
@@ -53,18 +53,20 @@ static void arm_arch_timer_compare_isr(void *arg)
 		}
 		arm_arch_timer_set_compare(next_cycle);
 	}
-	#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
+#ifdef CONFIG_ARM_ARCH_TIMER_ERRATA_740657
 	else {
 		/* In tickless mode, the compare register is normally not updated from
 		* within the ISR. Yet, to work around the timer's errata, a new value
-		* *must* be written while the interrupt is being processed, the event
-		* flag *must* be cleared after the compare register is updated. */
+		* *must* be written while the interrupt is being processed before the
+		* interrupt is acknowledged by the handling interrupt controller. */
 		arm_arch_timer_set_compare(0xFFFFFFFFFFFFFFFFLLU);
 	}
-	
-	arm_arch_timer_clear_int_status();
 
-	#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
+#ifdef CONFIG_QEMU_TARGET
+	arm_arch_timer_clear_int_status();
+#endif /* QEMU_TARGET */
+
+#endif /* CONFIG_ARM_ARCH_TIMER_ERRATA_740657 */
 
 	k_spin_unlock(&lock, key);
 
@@ -77,7 +79,8 @@ int z_clock_driver_init(struct device *device)
 
 	IRQ_CONNECT(ARM_ARCH_TIMER_IRQ, ARM_ARCH_TIMER_PRIO,
 		    arm_arch_timer_compare_isr, NULL, ARM_ARCH_TIMER_FLAGS);
-	arm_arch_timer_set_compare(arm_arch_timer_count() + CYC_PER_TICK);
+	last_cycle = arm_arch_timer_count();
+	arm_arch_timer_set_compare(last_cycle + CYC_PER_TICK);
 	arm_arch_timer_enable(true);
 	irq_enable(ARM_ARCH_TIMER_IRQ);
 
@@ -87,9 +90,7 @@ int z_clock_driver_init(struct device *device)
 void z_clock_set_timeout(int32_t ticks, bool idle)
 {
 	ARG_UNUSED(idle);
-
 #if defined(CONFIG_TICKLESS_KERNEL)
-
 	if (idle) {
 		return;
 	}

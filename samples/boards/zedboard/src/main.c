@@ -34,29 +34,32 @@ void myThreadsCode(void *id, void *unused1, void *unused2)
 	ARG_UNUSED(unused2);
 
 	uint32_t myId     = (uint32_t)id;
+	uint32_t myCC     = 0;
 	uint32_t inPort   = 0;
 	uint8_t  ticktock = 0;
 
 	while (1)
 	{
-		/*if (ticktock == 0)
-		{
-			printk("%04x: tick\n", myId);
-		}
-		else
-		{
-			printk("%04x: tock\n", myId);
-		}*/
-		ticktock ^= 1;
+		if (myCC % 1000 == 0) {
+			if (ticktock == 0)
+			{
+				printk("%04x: tick\n", myId);
+			}
+			else
+			{
+				printk("%04x: tock\n", myId);
+			}
+			ticktock ^= 1;
 
-		if (myId == 0xDEAD) {
-			gpio_port_set_masked(ledgpio, 0xFF, (ticktock == 1) ? 0xFF: 0x00);
-		} else {
-			gpio_port_get(swsgpio, &inPort);
-			//printk("Switches: 0x%08X\n", inPort);
+			if (myId == 0xDEAD) {
+				gpio_port_set_masked(ledgpio, 0xFF, (ticktock == 1) ? 0xFF: 0x00);
+			} else {
+				gpio_port_get(swsgpio, &inPort);
+			}
 		}
 
-		k_sleep(K_MSEC(1000));
+		k_sleep(K_MSEC(1));
+		++myCC;
 	}
 
 }
@@ -142,6 +145,5 @@ void main(void)
 		K_FOREVER);
 
 	k_thread_start(&myThread2);
-
 }
 
