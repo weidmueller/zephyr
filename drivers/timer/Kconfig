@@ -120,17 +120,17 @@ config ARM_ARCH_TIMER
 	  timer which provides per-cpu timers attached to a GIC to deliver its
 	  per-processor interrupts via PPIs.
 
-config ARM_ARCH_TIMER_ERRATA_740657
-	bool "ARM architected timer is affected by ARM errata 740657"
+config ARM_ARCH_TIMER_ERRATUM_740657
+	bool "ARM architected timer is affected by ARM erratum 740657"
 	default n
 	depends on ARM_ARCH_TIMER
 	help
 	  This option indicates that the ARM architected timer as implemented
-	  in the target hardware is affected by the ARM errata 740657 (comp.
+	  in the target hardware is affected by the ARM erratum 740657 (comp.
 	  ARM Cortex-A9 processors Software Developers Errata Notice, ARM 
 	  document ID032315) which leads to an additional, spurious interrupt
 	  indication upon every actual timer interrupt. This option activates
-	  the workaround for the errata within the timer driver.
+	  the workaround for the erratum within the timer driver.
 
 config CORTEX_M_SYSTICK
 	bool "Cortex-M SYSTICK timer"
