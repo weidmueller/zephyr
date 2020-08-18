@@ -24,17 +24,18 @@
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 /* Forward declarations */
-
 static int  eth_xlnx_gem_dev_init(struct device *dev);
 static void eth_xlnx_gem_iface_init(struct net_if *iface);
-
 static void eth_xlnx_gem_irq_config(struct device *dev);
 static void eth_xlnx_gem_isr(void *arg);
-
+static int  eth_xlnx_gem_send(struct device *dev, struct net_pkt *pkt);
 static int  eth_xlnx_gem_start_device(struct device *dev);
 static int  eth_xlnx_gem_stop_device(struct device *dev);
-
-static int  eth_xlnx_gem_send(struct device *dev, struct net_pkt *pkt);
+static enum ethernet_hw_caps eth_xlnx_gem_get_capabilities(
+	struct device *dev);
+#if defined(CONFIG_NET_STATISTICS_ETHERNET)
+static struct net_stats_eth *eth_xlnx_gem_stats(struct device *dev);
+#endif
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 static void eth_xlnx_gem_amba_clk_enable(struct device *dev);
@@ -46,57 +47,8 @@ static void eth_xlnx_gem_set_mac_address(struct device *dev);
 static void eth_xlnx_gem_set_initial_dmacr(struct device *dev);
 static void eth_xlnx_gem_init_phy(struct device *dev);
 static void eth_xlnx_gem_configure_buffers(struct device *dev);
-
-static enum ethernet_hw_caps eth_xlnx_gem_get_capabilities(struct device *dev);
-#if defined(CONFIG_NET_STATISTICS_ETHERNET)
-static struct net_stats_eth *eth_xlnx_gem_stats(struct device *dev);
-#endif
-
-/* Device tree data availability checks for all enabled device instances */
-
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
-	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
-#error Data missing for GEM0: device tree configuration data is unavailable!
-#endif
-
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
-	DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
-#error GEM0 is marked active in the current device tree, but is not \
-	activated in Kconfig!
-#endif
-
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_1)	&& \
-	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
-#error Data missing for GEM1: device tree configuration data is unavailable!
-#endif
-
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_1) && \
-	DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
-#error GEM1 is marked active in the current device tree, but is not \
-	activated in Kconfig!
-#endif
-
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
-	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
-#error Data missing for GEM2: device tree configuration data is unavailable!
-#endif
-
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
-	DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
-#error GEM2 is marked active in the current device tree, but is not \
-	activated in Kconfig!
-#endif
-
-#if defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
-	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
-#error Data missing for GEM3: device tree configuration data is unavailable!
-#endif
-
-#if !defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
-	DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
-#error GEM3 is marked active in the current device tree, but is not \
-	activated in Kconfig!
-#endif
+static void eth_xlnx_gem_handle_rx_pending(struct device *dev);
+static void eth_xlnx_gem_handle_tx_done(struct device *dev);
 
 /* GEM Driver API declaration, required by the upcoming instances of
  * the ETH_NET_DEVICE_INIT macro for each activated device instance */
@@ -114,7 +66,6 @@ static const struct ethernet_api eth_xlnx_gem_apis = {
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_0
 
 /* GEM0 DMA area structure declaration */
-
 struct eth_xlnx_dma_area_gem0 {
 	struct eth_xlnx_gem_bd rx_bd[CONFIG_ETH_XLNX_GEM_PORT_0_RXBD_COUNT];
 	struct eth_xlnx_gem_bd tx_bd[CONFIG_ETH_XLNX_GEM_PORT_0_TXBD_COUNT];
@@ -131,376 +82,334 @@ struct eth_xlnx_dma_area_gem0 {
 };
 
 /* GEM0 device configuration data */
-
 static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem0_dev_cfg = {
-
 	/* Controller base address -> from device tree data */
 	.base_addr   = DT_REG_ADDR(DT_NODELABEL(gem0)),
-
 	/* IRQ configuration function pointer */
 	.config_func = eth_xlnx_gem_irq_config,
-
-	/* Link speed & PHY init related parameters -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_LINK_10MBIT)
+	/* Maximum supported link speed  */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_LINK_10MBIT)
 	.max_link_speed = LINK_10MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_LINK_100MBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_LINK_100MBIT)
 	.max_link_speed = LINK_100MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_LINK_1GBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_LINK_1GBIT)
 	.max_link_speed = LINK_1GBIT,
-	#else
-	#error No valid link speed setting found in GEM0 configuration data
-	#endif
-
-	/* PHY initialization flag -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_INIT_PHY
+#else
+#error No valid maximum link speed setting found in GEM0 configuration data
+#endif
+	/* PHY initialization & management flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_INIT_PHY
 	.init_phy = 1,
-	#else
+#else
 	.init_phy = 0,
-	#endif
-
-	/* Advertise link speeds lower than nominal flag -> from autoconf */ \
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
+#endif
+	/* PHY MDIO const address / auto detection swith */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_PHY_MDIO_ADDRESS
+	.phy_mdio_addr_fix = CONFIG_ETH_XLNX_GEM_PORT_0_PHY_MDIO_ADDRESS,
+#else
+	.phy_mdio_addr_fix = 0,
+#endif
+	/* Advertise link speeds lower than nominal flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
 	.phy_advertise_lower = 1,
-	#else
+#else
 	.phy_advertise_lower = 0,
-	#endif
-
-	/* AMBA AHB data bus width setting -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_32BIT)
+#endif
+	/* Deferred processing settings */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING
+	.defer_rxp_to_thread = 1,
+#else
+	.defer_rxp_to_thread = 0,
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE
+	.defer_txd_to_thread = 1,
+#else
+	.defer_txd_to_thread = 0,
+#endif
+	/* Auxiliary thread priority (if applicable) */
+#ifdef ETH_XLNX_GEM_PORT_0_USES_THREAD
+	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_0_AUX_THREAD_PRIO,
+#else
+	.aux_thread_prio = 0,
+#endif
+	/* AMBA AHB data bus width setting */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_32BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_32BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_64BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_64BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_64BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_128BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_128BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_128BIT,
-	#else
-	#error No valid AMBA AHB data bus width setting found in \
-		GEM0 configuration data
-	#endif
-
-	/* AMBA AHB burst length -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_SINGLE)
+#else
+#error No valid AMBA AHB data bus width setting found in \
+	GEM0 configuration data
+#endif
+	/* AMBA AHB burst length */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_SINGLE)
 	.ahb_burst_length = AHB_BURST_SINGLE,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_INCR4)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_INCR4)
 	.ahb_burst_length = AHB_BURST_INCR4,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_INCR8)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_INCR8)
 	.ahb_burst_length = AHB_BURST_INCR8,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_INCR16)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_AHBBURST_INCR16)
 	.ahb_burst_length = AHB_BURST_INCR16,
-	#else
-	#error No valid AMBA AHB burst length setting found in \
-		GEM0 configuration data
-	#endif
-
-	/* Hardware RX buffer size -> from autoconf */ \
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_FULL)
+#else
+#error No valid AMBA AHB burst length setting found in \
+	GEM0 configuration data
+#endif
+	/* Hardware RX buffer size */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_FULL)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_8KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_4KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_4KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_4KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_2KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_2KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_2KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_1KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_SIZE_1KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_1KB,
-	#else
-	#error No valid Hardware RX buffer size setting found in \
-		GEM0 configuration data
-	#endif
-
-	/* RX buffer offset -> from autoconf */
+#else
+#error No valid Hardware RX buffer size setting found in \
+	GEM0 configuration data
+#endif
+	/* RX buffer offset */
 	.hw_rx_buffer_offset = CONFIG_ETH_XLNX_GEM_PORT_0_HWRX_BUFFER_OFFSET,
-	/* AHB RX buffer size, n * 64 bytes -> from autoconf */
+	/* AHB RX buffer size, n * 64 bytes */
 	.ahb_rx_buffer_size  = CONFIG_ETH_XLNX_GEM_PORT_0_AHB_RX_BUFFER_SIZE,
-	
 	/* AMBA Clock enable bit of the respective GEM in the SLCR,
-	 * relevant for Zynq only -> from autoconf */
-
-	#ifdef CONFIG_SOC_XILINX_ZYNQ7000
+	 * relevant for Zynq-7000 only */
+#ifdef CONFIG_SOC_XILINX_ZYNQ7000
 	.amba_clk_en_bit = ETH_XLNX_GEM_AMBA_CLK_ENABLE_BIT_GEM0,
-	#endif
-
+#endif
 	/* The upcoming clock settings are Zynq / UltraScale specific */
-
-	#if defined(CONFIG_SOC_XILINX_ZYNQ7000) 
-
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000) 
 	/* Processor system reference clock frequency */
-
 	.reference_clk_freq = CONFIG_ZYNQ_PS_REF_FREQUENCY,
-
-	/* Reference clock source PLL -> from autoconf */
-
-	#if defined(CONFIG_ZYNQ_ENET0_REFCLK_IOPLL)
+	/* Reference clock source PLL */
+#if defined(CONFIG_ZYNQ_ENET0_REFCLK_IOPLL)
 	.reference_pll			= IO_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQ_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQ_ENET0_REFCLK_ARMPLL)
+#elif defined(CONFIG_ZYNQ_ENET0_REFCLK_ARMPLL)
 	.reference_pll			= ARM_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQ_ARMPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQ_ENET0_REFCLK_DDRPLL)
+#elif defined(CONFIG_ZYNQ_ENET0_REFCLK_DDRPLL)
 	.reference_pll			= DDR_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQ_DDRPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQ_ENET0_REFCLK_EMIOCLK)
+#elif defined(CONFIG_ZYNQ_ENET0_REFCLK_EMIOCLK)
 	.reference_pll			= EMIO_CLK,
 	.reference_pll_ref_clk_multi	= 1,
-	#else
-	#error No RX clock reference PLL setting found in GEM0 configuration data
-	#endif
-	
-	/* GEM Reference clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQ_ENET0_SRCSEL_MIO)
+#else
+#error No RX clock reference PLL setting found in GEM0 configuration data
+#endif
+	/* GEM Reference clock source */
+#if defined(CONFIG_ZYNQ_ENET0_SRCSEL_MIO)
 	.gem_clk_source = CLK_SRC_MIO,
-	#elif defined(CONFIG_ZYNQ_ENET0_SRCSEL_EMIO)
+#elif defined(CONFIG_ZYNQ_ENET0_SRCSEL_EMIO)
 	.gem_clk_source = CLK_SRC_EMIO,
-	#else
-	#error No GEM clock source setting found in GEM0 configuration data
-	#endif
-
-	/* Initial GEM Reference clock divisors -> from autoconf */
-
+#else
+#error No GEM clock source setting found in GEM0 configuration data
+#endif
+	/* Initial GEM Reference clock divisors */
 	.gem_clk_divisor1 = CONFIG_ZYNQ_ENET0_DIVISOR1,
 	.gem_clk_divisor0 = CONFIG_ZYNQ_ENET0_DIVISOR0,
-
-	/* SLCR registers -> pre-defined by the memory map */
-
+	/* SLCR registers -> pre-defined by the system memory map */
 	.slcr_clk_register_addr  = ETH_XLNX_SLCR_GEM0_CLK_CTRL_REGISTER,
 	.slcr_rclk_register_addr = ETH_XLNX_SLCR_GEM0_RCLK_CTRL_REGISTER,
-	
-	#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-
+#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 	/* Processor system reference clock frequency */
-
 	.reference_clk_freq = CONFIG_ZYNQMP_PS_REF_FREQUENCY,
-
-	/* Reference clock source PLL -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET0_REFCLK_IOPLL)
+	/* Reference clock source PLL */
+#if defined(CONFIG_ZYNQMP_ENET0_REFCLK_IOPLL)
 	.reference_pll			= IO_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET0_REFCLK_RPLL)
+#elif defined(CONFIG_ZYNQMP_ENET0_REFCLK_RPLL)
 	.reference_pll			= R_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET0_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_ENET0_REFCLK_DPLL)
 	.reference_pll			= D_PLL_TO_LPD,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No RX clock reference PLL setting found in GEM0 configuration data
-	#endif
-	
-	/* GEM0 bit shift count in GEM_CLK_CTRL -> pre-defined by the memory map */
-
+#else
+#error No RX clock reference PLL setting found in GEM0 configuration data
+#endif
+	/* GEM0 bit shift count in GEM_CLK_CTRL -> pre-defined by
+	 * the system memory map */
 	.gem_clk_ctrl_shift = ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM0,
-
-	/* GEM RX clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET0_RXCLK_MIO)
+	/* GEM RX clock source */
+#if defined(CONFIG_ZYNQMP_ENET0_RXCLK_MIO)
 	.gem_rx_clk_source = CLK_SRC_MIO,
-	#elif defined(CONFIG_ZYNQMP_ENET0_RXCLK_EMIO)
+#elif defined(CONFIG_ZYNQMP_ENET0_RXCLK_EMIO)
 	.gem_rx_clk_source = CLK_SRC_EMIO,
-	#else
-	#error No RX clock source setting found in GEM0 configuration data
-	#endif
-
-	/* GEM Reference clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET0_REFCLK_PLL)
+#else
+#error No RX clock source setting found in GEM0 configuration data
+#endif
+	/* GEM Reference clock source */
+#if defined(CONFIG_ZYNQMP_ENET0_REFCLK_PLL)
 	.gem_tx_clk_source = CLK_SRC_PLL_REF,
-	#elif defined(CONFIG_ZYNQMP_ENET0_REFCLK_EMIO_GTX)
+#elif defined(CONFIG_ZYNQMP_ENET0_REFCLK_EMIO_GTX)
 	.gem_tx_clk_source = CLK_SRC_EMIO_PLL_GTX,
-	#else
-	#error No reference clock source setting found in GEM0 configuration data
-	#endif
-
-	/* Initial GEM Reference clock divisors -> from autoconf */
-
+#else
+#error No reference clock source setting found in GEM0 configuration data
+#endif
+	/* Initial GEM Reference clock divisors */
 	.gem_clk_divisor1 = CONFIG_ZYNQMP_ENET0_DIVISOR1,
 	.gem_clk_divisor0 = CONFIG_ZYNQMP_ENET0_DIVISOR0,
-
-	/* Ref CLK control register -> pre-defined by the memory map */
-
-	.crl_apb_ref_ctrl_register_addr = ETH_XLNX_CRL_APB_GEM0_REF_CTRL_REGISTER,
-
-	/* LPD LSBUS clock source PLL -> from autoconf */
-
-	#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
+	/* Ref CLK control register -> pre-defined by the system 
+	 * memory map */
+	.crl_apb_ref_ctrl_register_addr =
+		ETH_XLNX_CRL_APB_GEM0_REF_CTRL_REGISTER,
+	/* LPD LSBUS clock source PLL */
+#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
 	.lpd_lsbus_pll			= R_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
 	.lpd_lsbus_pll			= IO_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
 	.lpd_lsbus_pll			= D_PLL_TO_LPD,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No LPD LSBUS clock source setting found in ZYNQMP \
-		configuration data
-	#endif
-
+#else
+#error No LPD LSBUS clock source setting found in ZYNQMP configuration data
+#endif
 	.lpd_lsbus_divisor0 = CONFIG_ZYNQMP_LPD_LSBUS_DIVISOR0,
-
-	#endif /* SOC_XILINX_ZYNQ7000 / SOC_XILINX_ZYNQMP */
-
-	/* DMA area receive / transmit buffer (descriptor) related data
-	 * -> from autoconf */
-
+#endif /* SOC_XILINX_ZYNQ7000 / SOC_XILINX_ZYNQMP */
+	/* DMA area receive / transmit buffer (descriptor) related data */
 	.rxbd_count     = CONFIG_ETH_XLNX_GEM_PORT_0_RXBD_COUNT,
 	.txbd_count     = CONFIG_ETH_XLNX_GEM_PORT_0_TXBD_COUNT,
 	.rx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_0_RX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
 	.tx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_0_TX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
-
-	/* Feature flags, mostly targeting the gem.net_cfg register
-	 * -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_IGNORE_IGP_RXER
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+	/* Feature flags, mostly targeting the gem.net_cfg register */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_IGNORE_IGP_RXER
 	.ignore_igp_rxer = 1,
-	#else
+#else
 	.ignore_igp_rxer = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_REJECT_NSP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_REJECT_NSP
 	.disable_reject_nsp = 1,
-	#else
+#else
 	.disable_reject_nsp = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_IGP_STRETCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_IGP_STRETCH
 	.enable_igp_stretch = 1,
-	#else
+#else
 	.enable_igp_stretch = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_SGMII_MODE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_SGMII_MODE
 	.enable_sgmii_mode = 1,
-	#else
+#else
 	.enable_sgmii_mode = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_REJECT_FCS_CRC_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_REJECT_FCS_CRC_ERRORS
 	.disable_reject_fcs_crc_errors = 1,
-	#else
+#else
 	.disable_reject_fcs_crc_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_RX_HALFDUP_WHILE_TX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_RX_HALFDUP_WHILE_TX
 	.enable_rx_halfdup_while_tx = 1,
-	#else
+#else
 	.enable_rx_halfdup_while_tx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_RX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_RX_CHKSUM_OFFLOAD
 	.enable_rx_chksum_offload = 1,
-	#else
+#else
 	.enable_rx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_PAUSE_COPY
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_PAUSE_COPY
 	.disable_pause_copy = 1,
-	#else
+#else
 	.disable_pause_copy = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISCARD_RX_FCS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISCARD_RX_FCS
 	.discard_rx_fcs = 1,
-	#else
+#else
 	.discard_rx_fcs = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISCARD_RX_LENGTH_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISCARD_RX_LENGTH_ERRORS
 	.discard_rx_length_errors = 1,
-	#else
+#else
 	.discard_rx_length_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_PAUSE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_PAUSE
 	.enable_pause = 1,
-	#else
+#else
 	.enable_pause = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_TBI
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_TBI
 	.enable_tbi = 1,
-	#else
+#else
 	.enable_tbi = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_EXT_ADDR_MATCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_EXT_ADDR_MATCH
 	.ext_addr_match = 1,
-	#else
+#else
 	.ext_addr_match = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_1536_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_1536_FRAMES
 	.enable_1536_frames = 1,
-	#else
+#else
 	.enable_1536_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_UCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_UCAST_HASH
 	.enable_ucast_hash = 1,
-	#else
+#else
 	.enable_ucast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_MCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_MCAST_HASH
 	.enable_mcast_hash = 1,
-	#else
+#else
 	.enable_mcast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_BCAST
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISABLE_BCAST
 	.disable_bcast = 1,
-	#else
+#else
 	.disable_bcast = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_COPY_ALL_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_COPY_ALL_FRAMES
 	.copy_all_frames = 1,
-	#else
+#else
 	.copy_all_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISCARD_NON_VLAN
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISCARD_NON_VLAN
 	.discard_non_vlan = 1,
-	#else
+#else
 	.discard_non_vlan = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_FDX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_FDX
 	.enable_fdx = 1,
-	#else
+#else
 	.enable_fdx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISC_RX_AHB_UNAVAIL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DISC_RX_AHB_UNAVAIL
 	.disc_rx_ahb_unavail = 1,
-	#else
+#else
 	.disc_rx_ahb_unavail = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_TX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_TX_CHKSUM_OFFLOAD
 	.enable_tx_chksum_offload = 1,
-	#else
+#else
 	.enable_tx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_HWTX_BUFFER_SIZE_FULL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_HWTX_BUFFER_SIZE_FULL
 	.tx_buffer_size_full = 1,
-	#else
+#else
 	.tx_buffer_size_full = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_AHB_PACKET_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_AHB_PACKET_ENDIAN_SWAP
 	.enable_ahb_packet_endian_swap = 1,
-	#else
+#else
 	.enable_ahb_packet_endian_swap = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_AHB_MD_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_ENABLE_AHB_MD_ENDIAN_SWAP
 	.enable_ahb_md_endian_swap = 1
-	#else
+#else
 	.enable_ahb_md_endian_swap = 0
-	#endif
+#endif
 };
 
 /* GEM0 run-time device data */
-
-static struct eth_xlnx_gem_dev_data eth_xlnx_gem0_dev_data = { 
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_MAC_DEVTREE
-	/* Obtain the MAC address from the device tree data */
-	.mac_addr = DT_PROP(DT_NODELABEL(gem0), local_mac_address),
-	#else
-	/* Obtain the MAC address from autoconf */
-	.mac_addr = {
-		CONFIG_ETH_XLNX_GEM_PORT_0_MAC_BYTE_5,
-		CONFIG_ETH_XLNX_GEM_PORT_0_MAC_BYTE_4,
-		CONFIG_ETH_XLNX_GEM_PORT_0_MAC_BYTE_3,
-		CONFIG_ETH_XLNX_GEM_PORT_0_MAC_BYTE_2,
-		CONFIG_ETH_XLNX_GEM_PORT_0_MAC_BYTE_1,
-		CONFIG_ETH_XLNX_GEM_PORT_0_MAC_BYTE_0},
-	#endif
+static struct eth_xlnx_gem_dev_data eth_xlnx_gem0_dev_data = {
+	.mac_addr        = DT_PROP(DT_NODELABEL(gem0), local_mac_address),
 	.started         = 0,
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_0_AUX_THREAD_PRIO,
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
@@ -511,24 +420,23 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem0_dev_data = {
 };
 
 /* 
- * Declare the DMA areas for the each device locally if no fixed
- * address (e.g. OCM) was provided for the respective GEM controller.
+ * Declare the DMA areas for the each device locally if no fixed address
+ * (e.g. OCM) was provided for the respective GEM controller.
  * WATCH OUT: No measures of any kind are taken in order to ensure that the
  * data structures declared below are located in non-cached, non-buffered
  * (strongly ordered) memory at this time!
  */
-
-#ifndef CONFIG_ETH_XLNX_GEM_PORT_0_DMA_FIXED 
-static struct eth_xlnx_dma_area_gem0 dma_area_gem0; 
+#ifndef CONFIG_ETH_XLNX_GEM_PORT_0_DMA_FIXED
+static struct eth_xlnx_dma_area_gem0 dma_area_gem0;
 #endif
 
 /* GEM0 driver auxiliary thread stack declaration */
-
+#ifdef ETH_XLNX_GEM_PORT_0_USES_THREAD
 K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem0,
 	CONFIG_ETH_XLNX_GEM_PORT_0_AUX_THREAD_STACK_SIZE);
+#endif
 
 /* GEM0 driver instance declaration */
-
 ETH_NET_DEVICE_INIT(eth_xlnx_gem0, DT_LABEL(DT_NODELABEL(gem0)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
 	&eth_xlnx_gem0_dev_data, &eth_xlnx_gem0_dev_cfg,
@@ -540,7 +448,6 @@ ETH_NET_DEVICE_INIT(eth_xlnx_gem0, DT_LABEL(DT_NODELABEL(gem0)),
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_1
 
 /* GEM1 DMA area structure declaration */
-
 struct eth_xlnx_dma_area_gem1 {
 	struct eth_xlnx_gem_bd rx_bd[CONFIG_ETH_XLNX_GEM_PORT_1_RXBD_COUNT];
 	struct eth_xlnx_gem_bd tx_bd[CONFIG_ETH_XLNX_GEM_PORT_1_TXBD_COUNT];
@@ -557,376 +464,334 @@ struct eth_xlnx_dma_area_gem1 {
 };
 
 /* GEM1 device configuration data */
-
 static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem1_dev_cfg = {
-
 	/* Controller base address -> from device tree data */
 	.base_addr   = DT_REG_ADDR(DT_NODELABEL(gem1)),
-
 	/* IRQ configuration function pointer */
 	.config_func = eth_xlnx_gem_irq_config,
-
-	/* Link speed & PHY init related parameters -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_LINK_10MBIT)
+	/* Maximum supported link speed  */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_LINK_10MBIT)
 	.max_link_speed = LINK_10MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_LINK_100MBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_LINK_100MBIT)
 	.max_link_speed = LINK_100MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_LINK_1GBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_LINK_1GBIT)
 	.max_link_speed = LINK_1GBIT,
-	#else
-	#error No valid link speed setting found in GEM1 configuration data
-	#endif
-
-	/* PHY initialization flag -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_INIT_PHY
+#else
+#error No valid maximum link speed setting found in GEM1 configuration data
+#endif
+	/* PHY initialization & management flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_INIT_PHY
 	.init_phy = 1,
-	#else
+#else
 	.init_phy = 0,
-	#endif
-
-	/* Advertise link speeds lower than nominal flag -> from autoconf */ \
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
+#endif
+	/* PHY MDIO const address / auto detection swith */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_PHY_MDIO_ADDRESS
+	.phy_mdio_addr_fix = CONFIG_ETH_XLNX_GEM_PORT_1_PHY_MDIO_ADDRESS,
+#else
+	.phy_mdio_addr_fix = 0,
+#endif
+	/* Advertise link speeds lower than nominal flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
 	.phy_advertise_lower = 1,
-	#else
+#else
 	.phy_advertise_lower = 0,
-	#endif
-
-	/* AMBA AHB data bus width setting -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_32BIT)
+#endif
+	/* Deferred processing settings */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING
+	.defer_rxp_to_thread = 1,
+#else
+	.defer_rxp_to_thread = 0,
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE
+	.defer_txd_to_thread = 1,
+#else
+	.defer_txd_to_thread = 0,
+#endif
+	/* Auxiliary thread priority (if applicable) */
+#ifdef ETH_XLNX_GEM_PORT_1_USES_THREAD
+	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_1_AUX_THREAD_PRIO,
+#else
+	.aux_thread_prio = 0,
+#endif
+	/* AMBA AHB data bus width setting */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_32BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_32BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_64BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_64BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_64BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_128BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_128BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_128BIT,
-	#else
-	#error No valid AMBA AHB data bus width setting found in \
-		GEM1 configuration data
-	#endif
-
-	/* AMBA AHB burst length -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_SINGLE)
+#else
+#error No valid AMBA AHB data bus width setting found in \
+	GEM1 configuration data
+#endif
+	/* AMBA AHB burst length */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_SINGLE)
 	.ahb_burst_length = AHB_BURST_SINGLE,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_INCR4)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_INCR4)
 	.ahb_burst_length = AHB_BURST_INCR4,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_INCR8)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_INCR8)
 	.ahb_burst_length = AHB_BURST_INCR8,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_INCR16)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_AHBBURST_INCR16)
 	.ahb_burst_length = AHB_BURST_INCR16,
-	#else
-	#error No valid AMBA AHB burst length setting found in \
-		GEM1 configuration data
-	#endif
-
-	/* Hardware RX buffer size -> from autoconf */ \
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_FULL)
+#else
+#error No valid AMBA AHB burst length setting found in \
+	GEM1 configuration data
+#endif
+	/* Hardware RX buffer size */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_FULL)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_8KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_4KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_4KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_4KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_2KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_2KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_2KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_1KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_SIZE_1KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_1KB,
-	#else
-	#error No valid Hardware RX buffer size setting found in \
-		GEM1 configuration data
-	#endif
-
-	/* RX buffer offset -> from autoconf */
+#else
+#error No valid Hardware RX buffer size setting found in \
+	GEM1 configuration data
+#endif
+	/* RX buffer offset */
 	.hw_rx_buffer_offset = CONFIG_ETH_XLNX_GEM_PORT_1_HWRX_BUFFER_OFFSET,
-	/* AHB RX buffer size, n * 64 bytes -> from autoconf */
+	/* AHB RX buffer size, n * 64 bytes */
 	.ahb_rx_buffer_size  = CONFIG_ETH_XLNX_GEM_PORT_1_AHB_RX_BUFFER_SIZE,
-	
 	/* AMBA Clock enable bit of the respective GEM in the SLCR,
-	 * relevant for Zynq only -> from autoconf */
-
-	#ifdef CONFIG_SOC_XILINX_ZYNQ7000
+	 * relevant for Zynq-7000 only */
+#ifdef CONFIG_SOC_XILINX_ZYNQ7000
 	.amba_clk_en_bit = ETH_XLNX_GEM_AMBA_CLK_ENABLE_BIT_GEM1,
-	#endif
-
+#endif
 	/* The upcoming clock settings are Zynq / UltraScale specific */
-
-	#if defined(CONFIG_SOC_XILINX_ZYNQ7000) 
-
+#if defined(CONFIG_SOC_XILINX_ZYNQ7000) 
 	/* Processor system reference clock frequency */
-
 	.reference_clk_freq = CONFIG_ZYNQ_PS_REF_FREQUENCY,
-
-	/* Reference clock source PLL -> from autoconf */
-
-	#if defined(CONFIG_ZYNQ_ENET1_REFCLK_IOPLL)
+	/* Reference clock source PLL */
+#if defined(CONFIG_ZYNQ_ENET1_REFCLK_IOPLL)
 	.reference_pll			= IO_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQ_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQ_ENET1_REFCLK_ARMPLL)
+#elif defined(CONFIG_ZYNQ_ENET1_REFCLK_ARMPLL)
 	.reference_pll			= ARM_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQ_ARMPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQ_ENET1_REFCLK_DDRPLL)
+#elif defined(CONFIG_ZYNQ_ENET1_REFCLK_DDRPLL)
 	.reference_pll			= DDR_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQ_DDRPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQ_ENET1_REFCLK_EMIOCLK)
+#elif defined(CONFIG_ZYNQ_ENET1_REFCLK_EMIOCLK)
 	.reference_pll			= EMIO_CLK,
 	.reference_pll_ref_clk_multi	= 1,
-	#else
-	#error No RX clock reference PLL setting found in GEM1 configuration data
-	#endif
-	
-	/* GEM Reference clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQ_ENET1_SRCSEL_MIO)
+#else
+#error No RX clock reference PLL setting found in GEM1 configuration data
+#endif
+	/* GEM Reference clock source */
+#if defined(CONFIG_ZYNQ_ENET1_SRCSEL_MIO)
 	.gem_clk_source = CLK_SRC_MIO,
-	#elif defined(CONFIG_ZYNQ_ENET1_SRCSEL_EMIO)
+#elif defined(CONFIG_ZYNQ_ENET1_SRCSEL_EMIO)
 	.gem_clk_source = CLK_SRC_EMIO,
-	#else
-	#error No GEM clock source setting found in GEM1 configuration data
-	#endif
-
-	/* Initial GEM Reference clock divisors -> from autoconf */
-
+#else
+#error No GEM clock source setting found in GEM0 configuration data
+#endif
+	/* Initial GEM Reference clock divisors */
 	.gem_clk_divisor1 = CONFIG_ZYNQ_ENET1_DIVISOR1,
 	.gem_clk_divisor0 = CONFIG_ZYNQ_ENET1_DIVISOR0,
-
-	/* SLCR registers -> pre-defined by the memory map */
-
+	/* SLCR registers -> pre-defined by the system memory map */
 	.slcr_clk_register_addr  = ETH_XLNX_SLCR_GEM1_CLK_CTRL_REGISTER,
 	.slcr_rclk_register_addr = ETH_XLNX_SLCR_GEM1_RCLK_CTRL_REGISTER,
-	
-	#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-
+#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 	/* Processor system reference clock frequency */
-
 	.reference_clk_freq = CONFIG_ZYNQMP_PS_REF_FREQUENCY,
-
-	/* Reference clock source PLL -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET1_REFCLK_IOPLL)
+	/* Reference clock source PLL */
+#if defined(CONFIG_ZYNQMP_ENET1_REFCLK_IOPLL)
 	.reference_pll			= IO_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET1_REFCLK_RPLL)
+#elif defined(CONFIG_ZYNQMP_ENET1_REFCLK_RPLL)
 	.reference_pll			= R_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET1_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_ENET1_REFCLK_DPLL)
 	.reference_pll			= D_PLL_TO_LPD,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No RX clock reference PLL setting found in GEM1 configuration data
-	#endif
-
-	/* GEM1 bit shift count in GEM_CLK_CTRL -> pre-defined by the memory map */
-
+#else
+#error No RX clock reference PLL setting found in GEM1 configuration data
+#endif
+	/* GEM1 bit shift count in GEM_CLK_CTRL -> pre-defined by
+	 * the system memory map */
 	.gem_clk_ctrl_shift = ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM1,
-
-	/* GEM RX clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET1_RXCLK_MIO)
+	/* GEM RX clock source */
+#if defined(CONFIG_ZYNQMP_ENET1_RXCLK_MIO)
 	.gem_rx_clk_source = CLK_SRC_MIO,
-	#elif defined(CONFIG_ZYNQMP_ENET1_RXCLK_EMIO)
+#elif defined(CONFIG_ZYNQMP_ENET1_RXCLK_EMIO)
 	.gem_rx_clk_source = CLK_SRC_EMIO,
-	#else
-	#error No RX clock source setting found in GEM1 configuration data
-	#endif
-
-	/* GEM Reference clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET1_REFCLK_PLL)
+#else
+#error No RX clock source setting found in GEM1 configuration data
+#endif
+	/* GEM Reference clock source */
+#if defined(CONFIG_ZYNQMP_ENET1_REFCLK_PLL)
 	.gem_tx_clk_source = CLK_SRC_PLL_REF,
-	#elif defined(CONFIG_ZYNQMP_ENET1_REFCLK_EMIO_GTX)
+#elif defined(CONFIG_ZYNQMP_ENET1_REFCLK_EMIO_GTX)
 	.gem_tx_clk_source = CLK_SRC_EMIO_PLL_GTX,
-	#else
-	#error No reference clock source setting found in GEM1 configuration data
-	#endif
-
-	/* Initial GEM Reference clock divisors -> from autoconf */
-
+#else
+#error No reference clock source setting found in GEM1 configuration data
+#endif
+	/* Initial GEM Reference clock divisors */
 	.gem_clk_divisor1 = CONFIG_ZYNQMP_ENET1_DIVISOR1,
 	.gem_clk_divisor0 = CONFIG_ZYNQMP_ENET1_DIVISOR0,
-
-	/* Ref CLK control register -> pre-defined by the memory map */
-
-	.crl_apb_ref_ctrl_register_addr = ETH_XLNX_CRL_APB_GEM1_REF_CTRL_REGISTER,
-
-	/* LPD LSBUS clock source PLL -> from autoconf */
-
-	#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
+	/* Ref CLK control register -> pre-defined by the system
+	 * memory map */
+	.crl_apb_ref_ctrl_register_addr =
+		ETH_XLNX_CRL_APB_GEM1_REF_CTRL_REGISTER,
+	/* LPD LSBUS clock source PLL */
+#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
 	.lpd_lsbus_pll			= R_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
 	.lpd_lsbus_pll			= IO_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
 	.lpd_lsbus_pll			= D_PLL_TO_LPD,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No LPD LSBUS clock source setting found in ZYNQMP \
-		configuration data
-	#endif
-
+#else
+#error No LPD LSBUS clock source setting found in ZYNQMP configuration data
+#endif
 	.lpd_lsbus_divisor0 = CONFIG_ZYNQMP_LPD_LSBUS_DIVISOR0,
-
-	#endif /* SOC_XILINX_ZYNQ7000 / SOC_XILINX_ZYNQMP */
-
-	/* DMA area receive / transmit buffer (descriptor) related data
-	 * -> from autoconf */
-
+#endif /* SOC_XILINX_ZYNQ7000 / SOC_XILINX_ZYNQMP */
+	/* DMA area receive / transmit buffer (descriptor) related data */
 	.rxbd_count     = CONFIG_ETH_XLNX_GEM_PORT_1_RXBD_COUNT,
 	.txbd_count     = CONFIG_ETH_XLNX_GEM_PORT_1_TXBD_COUNT,
 	.rx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_1_RX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
 	.tx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_1_TX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
-
-	/* Feature flags, mostly targeting the gem.net_cfg register
-	 * -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_IGNORE_IGP_RXER
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+	/* Feature flags, mostly targeting the gem.net_cfg register */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_IGNORE_IGP_RXER
 	.ignore_igp_rxer = 1,
-	#else
+#else
 	.ignore_igp_rxer = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_REJECT_NSP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_REJECT_NSP
 	.disable_reject_nsp = 1,
-	#else
+#else
 	.disable_reject_nsp = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_IGP_STRETCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_IGP_STRETCH
 	.enable_igp_stretch = 1,
-	#else
+#else
 	.enable_igp_stretch = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_SGMII_MODE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_SGMII_MODE
 	.enable_sgmii_mode = 1,
-	#else
+#else
 	.enable_sgmii_mode = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_REJECT_FCS_CRC_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_REJECT_FCS_CRC_ERRORS
 	.disable_reject_fcs_crc_errors = 1,
-	#else
+#else
 	.disable_reject_fcs_crc_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_RX_HALFDUP_WHILE_TX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_RX_HALFDUP_WHILE_TX
 	.enable_rx_halfdup_while_tx = 1,
-	#else
+#else
 	.enable_rx_halfdup_while_tx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_RX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_RX_CHKSUM_OFFLOAD
 	.enable_rx_chksum_offload = 1,
-	#else
+#else
 	.enable_rx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_PAUSE_COPY
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_PAUSE_COPY
 	.disable_pause_copy = 1,
-	#else
+#else
 	.disable_pause_copy = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISCARD_RX_FCS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISCARD_RX_FCS
 	.discard_rx_fcs = 1,
-	#else
+#else
 	.discard_rx_fcs = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISCARD_RX_LENGTH_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISCARD_RX_LENGTH_ERRORS
 	.discard_rx_length_errors = 1,
-	#else
+#else
 	.discard_rx_length_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_PAUSE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_PAUSE
 	.enable_pause = 1,
-	#else
+#else
 	.enable_pause = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_TBI
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_TBI
 	.enable_tbi = 1,
-	#else
+#else
 	.enable_tbi = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_EXT_ADDR_MATCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_EXT_ADDR_MATCH
 	.ext_addr_match = 1,
-	#else
+#else
 	.ext_addr_match = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_1536_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_1536_FRAMES
 	.enable_1536_frames = 1,
-	#else
+#else
 	.enable_1536_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_UCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_UCAST_HASH
 	.enable_ucast_hash = 1,
-	#else
+#else
 	.enable_ucast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_MCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_MCAST_HASH
 	.enable_mcast_hash = 1,
-	#else
+#else
 	.enable_mcast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_BCAST
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISABLE_BCAST
 	.disable_bcast = 1,
-	#else
+#else
 	.disable_bcast = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_COPY_ALL_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_COPY_ALL_FRAMES
 	.copy_all_frames = 1,
-	#else
+#else
 	.copy_all_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISCARD_NON_VLAN
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISCARD_NON_VLAN
 	.discard_non_vlan = 1,
-	#else
+#else
 	.discard_non_vlan = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_FDX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_FDX
 	.enable_fdx = 1,
-	#else
+#else
 	.enable_fdx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISC_RX_AHB_UNAVAIL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DISC_RX_AHB_UNAVAIL
 	.disc_rx_ahb_unavail = 1,
-	#else
+#else
 	.disc_rx_ahb_unavail = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_TX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_TX_CHKSUM_OFFLOAD
 	.enable_tx_chksum_offload = 1,
-	#else
+#else
 	.enable_tx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_HWTX_BUFFER_SIZE_FULL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_HWTX_BUFFER_SIZE_FULL
 	.tx_buffer_size_full = 1,
-	#else
+#else
 	.tx_buffer_size_full = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_AHB_PACKET_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_AHB_PACKET_ENDIAN_SWAP
 	.enable_ahb_packet_endian_swap = 1,
-	#else
+#else
 	.enable_ahb_packet_endian_swap = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_AHB_MD_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_ENABLE_AHB_MD_ENDIAN_SWAP
 	.enable_ahb_md_endian_swap = 1
-	#else
+#else
 	.enable_ahb_md_endian_swap = 0
-	#endif
+#endif
 };
 
 /* GEM1 run-time device data */
-
-static struct eth_xlnx_gem_dev_data eth_xlnx_gem1_dev_data = { 
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_MAC_DEVTREE
-	/* Obtain the MAC address from the device tree data */
-	.mac_addr = DT_PROP(DT_NODELABEL(gem1), local_mac_address),
-	#else
-	/* Obtain the MAC address from autoconf */
-	.mac_addr = {
-		CONFIG_ETH_XLNX_GEM_PORT_1_MAC_BYTE_5,
-		CONFIG_ETH_XLNX_GEM_PORT_1_MAC_BYTE_4,
-		CONFIG_ETH_XLNX_GEM_PORT_1_MAC_BYTE_3,
-		CONFIG_ETH_XLNX_GEM_PORT_1_MAC_BYTE_2,
-		CONFIG_ETH_XLNX_GEM_PORT_1_MAC_BYTE_1,
-		CONFIG_ETH_XLNX_GEM_PORT_1_MAC_BYTE_0},
-	#endif
+static struct eth_xlnx_gem_dev_data eth_xlnx_gem1_dev_data = {
+	.mac_addr        = DT_PROP(DT_NODELABEL(gem1), local_mac_address),
 	.started         = 0,
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_1_AUX_THREAD_PRIO,
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
@@ -936,17 +801,17 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem1_dev_data = {
 	.first_tx_buffer = NULL
 };
 
-#ifndef CONFIG_ETH_XLNX_GEM_PORT_1_DMA_FIXED 
-static struct eth_xlnx_dma_area_gem1 dma_area_gem1; 
+#ifndef CONFIG_ETH_XLNX_GEM_PORT_1_DMA_FIXED
+static struct eth_xlnx_dma_area_gem1 dma_area_gem1;
 #endif
 
 /* GEM1 driver auxiliary thread stack declaration */
-
+#ifdef ETH_XLNX_GEM_PORT_1_USES_THREAD
 K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem1,
 	CONFIG_ETH_XLNX_GEM_PORT_1_AUX_THREAD_STACK_SIZE);
+#endif
 
 /* GEM1 driver instance declaration */
-
 ETH_NET_DEVICE_INIT(eth_xlnx_gem1, DT_LABEL(DT_NODELABEL(gem1)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
 	&eth_xlnx_gem1_dev_data, &eth_xlnx_gem1_dev_cfg,
@@ -958,13 +823,11 @@ ETH_NET_DEVICE_INIT(eth_xlnx_gem1, DT_LABEL(DT_NODELABEL(gem1)),
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_2
 
 /* GEM2 exists on UltraScale targets only! */
-
 #ifdef CONFIG_SOC_XILINX_ZYNQ7000
 #error GEM2 is not supported by the Zynq-7000
 #endif
 
 /* GEM2 DMA area structure declaration */
-
 struct eth_xlnx_dma_area_gem2 {
 	struct eth_xlnx_gem_bd rx_bd[CONFIG_ETH_XLNX_GEM_PORT_2_RXBD_COUNT];
 	struct eth_xlnx_gem_bd tx_bd[CONFIG_ETH_XLNX_GEM_PORT_2_TXBD_COUNT];
@@ -981,322 +844,296 @@ struct eth_xlnx_dma_area_gem2 {
 };
 
 /* GEM2 device configuration data */
-
 static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem2_dev_cfg = {
-
 	/* Controller base address -> from device tree data */
 	.base_addr   = DT_REG_ADDR(DT_NODELABEL(gem2)),
-
 	/* IRQ configuration function pointer */
 	.config_func = eth_xlnx_gem_irq_config,
-
-	/* Link speed & PHY init related parameters -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_LINK_10MBIT)
+	/* Maximum supported link speed */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_LINK_10MBIT)
 	.max_link_speed = LINK_10MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_LINK_100MBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_LINK_100MBIT)
 	.max_link_speed = LINK_100MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_LINK_1GBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_LINK_1GBIT)
 	.max_link_speed = LINK_1GBIT,
-	#else
-	#error No valid link speed setting found in GEM2 configuration data
-	#endif
-
-	/* PHY initialization flag -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_INIT_PHY
+#else
+#error No valid maximum link speed setting found in GEM2 configuration data
+#endif
+	/* PHY initialization & management flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_INIT_PHY
 	.init_phy = 1,
-	#else
+#else
 	.init_phy = 0,
-	#endif
-
-	/* Advertise link speeds lower than nominal flag -> from autoconf */ \
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
+#endif
+	/* PHY MDIO const address / auto detection swith */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_PHY_MDIO_ADDRESS
+	.phy_mdio_addr_fix = CONFIG_ETH_XLNX_GEM_PORT_2_PHY_MDIO_ADDRESS,
+#else
+	.phy_mdio_addr_fix = 0,
+#endif
+	/* Advertise link speeds lower than nominal flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
 	.phy_advertise_lower = 1,
-	#else
+#else
 	.phy_advertise_lower = 0,
-	#endif
-
-	/* AMBA AHB data bus width setting -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_32BIT)
+#endif
+	/* Deferred processing settings */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING
+	.defer_rxp_to_thread = 1,
+#else
+	.defer_rxp_to_thread = 0,
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE
+	.defer_txd_to_thread = 1,
+#else
+	.defer_txd_to_thread = 0,
+#endif
+	/* Auxiliary thread priority (if applicable) */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO
+	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO,
+#else
+	.aux_thread_prio = 0,
+#endif
+	/* AMBA AHB data bus width setting */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_32BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_32BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_64BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_64BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_64BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_128BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_128BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_128BIT,
-	#else
-	#error No valid AMBA AHB data bus width setting found in \
-		GEM2 configuration data
-	#endif
-
-	/* AMBA AHB burst length -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_SINGLE)
+#else
+#error No valid AMBA AHB data bus width setting found in \
+	GEM2 configuration data
+#endif
+	/* AMBA AHB burst length */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_SINGLE)
 	.ahb_burst_length = AHB_BURST_SINGLE,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_INCR4)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_INCR4)
 	.ahb_burst_length = AHB_BURST_INCR4,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_INCR8)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_INCR8)
 	.ahb_burst_length = AHB_BURST_INCR8,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_INCR16)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_AHBBURST_INCR16)
 	.ahb_burst_length = AHB_BURST_INCR16,
-	#else
-	#error No valid AMBA AHB burst length setting found in \
-		GEM2 configuration data
-	#endif
-
-	/* Hardware RX buffer size -> from autoconf */ \
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_FULL)
+#else
+#error No valid AMBA AHB burst length setting found in \
+	GEM2 configuration data
+#endif
+	/* Hardware RX buffer size */ \
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_FULL)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_8KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_4KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_4KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_4KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_2KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_2KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_2KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_1KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_SIZE_1KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_1KB,
-	#else
-	#error No valid Hardware RX buffer size setting found in \
-		GEM2 configuration data
-	#endif
-
-	/* RX buffer offset -> from autoconf */
+#else
+#error No valid Hardware RX buffer size setting found in \
+	GEM2 configuration data
+#endif
+	/* RX buffer offset */
 	.hw_rx_buffer_offset = CONFIG_ETH_XLNX_GEM_PORT_2_HWRX_BUFFER_OFFSET,
-	/* AHB RX buffer size, n * 64 bytes -> from autoconf */
+	/* AHB RX buffer size, n * 64 bytes */
 	.ahb_rx_buffer_size  = CONFIG_ETH_XLNX_GEM_PORT_2_AHB_RX_BUFFER_SIZE,
 	
-	/* As GEM2 is only supported by the UltraScale, skip the Zynq-specific
-	 * clock settings in the configuration data */
+	/* As GEM2 is only supported by the UltraScale, skip the Zynq-7000
+	 * specific clock settings in the configuration data */
 
 	/* Processor system reference clock frequency */
-
 	.reference_clk_freq = CONFIG_ZYNQMP_PS_REF_FREQUENCY,
-
-	/* Reference clock source PLL -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET2_REFCLK_IOPLL)
+	/* Reference clock source PLL */
+#if defined(CONFIG_ZYNQMP_ENET2_REFCLK_IOPLL)
 	.reference_pll			= IO_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET2_REFCLK_RPLL)
+#elif defined(CONFIG_ZYNQMP_ENET2_REFCLK_RPLL)
 	.reference_pll			= R_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET2_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_ENET2_REFCLK_DPLL)
 	.reference_pll			= D_PLL_TO_LPD,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No RX clock reference PLL setting found in GEM2 configuration data
-	#endif
-
-	/* GEM2 bit shift count in GEM_CLK_CTRL -> pre-defined by the memory map */
-
+#else
+#error No RX clock reference PLL setting found in GEM2 configuration data
+#endif
+	/* GEM2 bit shift count in GEM_CLK_CTRL -> pre-defined by the
+	 * system memory map */
 	.gem_clk_ctrl_shift = ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM2,
-
-	/* GEM RX clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET2_RXCLK_MIO)
+	/* GEM RX clock source */
+#if defined(CONFIG_ZYNQMP_ENET2_RXCLK_MIO)
 	.gem_rx_clk_source = CLK_SRC_MIO,
-	#elif defined(CONFIG_ZYNQMP_ENET2_RXCLK_EMIO)
+#elif defined(CONFIG_ZYNQMP_ENET2_RXCLK_EMIO)
 	.gem_rx_clk_source = CLK_SRC_EMIO,
-	#else
-	#error No RX clock source setting found in GEM2 configuration data
-	#endif
-
-	/* GEM Reference clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET2_REFCLK_PLL)
+#else
+#error No RX clock source setting found in GEM2 configuration data
+#endif
+	/* GEM Reference clock source */
+#if defined(CONFIG_ZYNQMP_ENET2_REFCLK_PLL)
 	.gem_tx_clk_source = CLK_SRC_PLL_REF,
-	#elif defined(CONFIG_ZYNQMP_ENET2_REFCLK_EMIO_GTX)
+#elif defined(CONFIG_ZYNQMP_ENET2_REFCLK_EMIO_GTX)
 	.gem_tx_clk_source = CLK_SRC_EMIO_PLL_GTX,
-	#else
-	#error No reference clock source setting found in GEM2 configuration data
-	#endif
-
-	/* Initial GEM Reference clock divisors -> from autoconf */
-
+#else
+#error No reference clock source setting found in GEM2 configuration data
+#endif
+	/* Initial GEM Reference clock divisors */
 	.gem_clk_divisor1 = CONFIG_ZYNQMP_ENET2_DIVISOR1,
 	.gem_clk_divisor0 = CONFIG_ZYNQMP_ENET2_DIVISOR0,
-
-	/* Ref CLK control register -> pre-defined by the memory map */
-
-	.crl_apb_ref_ctrl_register_addr = ETH_XLNX_CRL_APB_GEM2_REF_CTRL_REGISTER,
-
-	/* LPD LSBUS clock source PLL -> from autoconf */
-
-	#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
+	/* Ref CLK control register -> pre-defined by the system memory map */
+	.crl_apb_ref_ctrl_register_addr =
+		ETH_XLNX_CRL_APB_GEM2_REF_CTRL_REGISTER,
+	/* LPD LSBUS clock source PLL */
+#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
 	.lpd_lsbus_pll			= R_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
 	.lpd_lsbus_pll			= IO_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
 	.lpd_lsbus_pll			= D_PLL_TO_LPD,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No LPD LSBUS clock source setting found in ZYNQMP \
-		configuration data
-	#endif
-
+#else
+#error No LPD LSBUS clock source setting found in ZYNQMP configuration data
+#endif
 	.lpd_lsbus_divisor0 = CONFIG_ZYNQMP_LPD_LSBUS_DIVISOR0,
-
-	/* DMA area receive / transmit buffer (descriptor) related data
-	 * -> from autoconf */
-
+	/* DMA area receive / transmit buffer (descriptor) related data */
 	.rxbd_count     = CONFIG_ETH_XLNX_GEM_PORT_2_RXBD_COUNT,
 	.txbd_count     = CONFIG_ETH_XLNX_GEM_PORT_2_TXBD_COUNT,
 	.rx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_2_RX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
 	.tx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_2_TX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
-
-	/* Feature flags, mostly targeting the gem.net_cfg register
-	 * -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_IGNORE_IGP_RXER
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+	/* Feature flags, mostly targeting the gem.net_cfg register */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_IGNORE_IGP_RXER
 	.ignore_igp_rxer = 1,
-	#else
+#else
 	.ignore_igp_rxer = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_REJECT_NSP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_REJECT_NSP
 	.disable_reject_nsp = 1,
-	#else
+#else
 	.disable_reject_nsp = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_IGP_STRETCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_IGP_STRETCH
 	.enable_igp_stretch = 1,
-	#else
+#else
 	.enable_igp_stretch = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_SGMII_MODE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_SGMII_MODE
 	.enable_sgmii_mode = 1,
-	#else
+#else
 	.enable_sgmii_mode = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_REJECT_FCS_CRC_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_REJECT_FCS_CRC_ERRORS
 	.disable_reject_fcs_crc_errors = 1,
-	#else
+#else
 	.disable_reject_fcs_crc_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_RX_HALFDUP_WHILE_TX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_RX_HALFDUP_WHILE_TX
 	.enable_rx_halfdup_while_tx = 1,
-	#else
+#else
 	.enable_rx_halfdup_while_tx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_RX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_RX_CHKSUM_OFFLOAD
 	.enable_rx_chksum_offload = 1,
-	#else
+#else
 	.enable_rx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_PAUSE_COPY
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_PAUSE_COPY
 	.disable_pause_copy = 1,
-	#else
+#else
 	.disable_pause_copy = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISCARD_RX_FCS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISCARD_RX_FCS
 	.discard_rx_fcs = 1,
-	#else
+#else
 	.discard_rx_fcs = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISCARD_RX_LENGTH_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISCARD_RX_LENGTH_ERRORS
 	.discard_rx_length_errors = 1,
-	#else
+#else
 	.discard_rx_length_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_PAUSE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_PAUSE
 	.enable_pause = 1,
-	#else
+#else
 	.enable_pause = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_TBI
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_TBI
 	.enable_tbi = 1,
-	#else
+#else
 	.enable_tbi = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_EXT_ADDR_MATCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_EXT_ADDR_MATCH
 	.ext_addr_match = 1,
-	#else
+#else
 	.ext_addr_match = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_1536_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_1536_FRAMES
 	.enable_1536_frames = 1,
-	#else
+#else
 	.enable_1536_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_UCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_UCAST_HASH
 	.enable_ucast_hash = 1,
-	#else
+#else
 	.enable_ucast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_MCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_MCAST_HASH
 	.enable_mcast_hash = 1,
-	#else
+#else
 	.enable_mcast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_BCAST
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISABLE_BCAST
 	.disable_bcast = 1,
-	#else
+#else
 	.disable_bcast = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_COPY_ALL_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_COPY_ALL_FRAMES
 	.copy_all_frames = 1,
-	#else
+#else
 	.copy_all_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISCARD_NON_VLAN
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISCARD_NON_VLAN
 	.discard_non_vlan = 1,
-	#else
+#else
 	.discard_non_vlan = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_FDX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_FDX
 	.enable_fdx = 1,
-	#else
+#else
 	.enable_fdx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISC_RX_AHB_UNAVAIL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DISC_RX_AHB_UNAVAIL
 	.disc_rx_ahb_unavail = 1,
-	#else
+#else
 	.disc_rx_ahb_unavail = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_TX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_TX_CHKSUM_OFFLOAD
 	.enable_tx_chksum_offload = 1,
-	#else
+#else
 	.enable_tx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_HWTX_BUFFER_SIZE_FULL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_HWTX_BUFFER_SIZE_FULL
 	.tx_buffer_size_full = 1,
-	#else
+#else
 	.tx_buffer_size_full = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_AHB_PACKET_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_AHB_PACKET_ENDIAN_SWAP
 	.enable_ahb_packet_endian_swap = 1,
-	#else
+#else
 	.enable_ahb_packet_endian_swap = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_AHB_MD_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_ENABLE_AHB_MD_ENDIAN_SWAP
 	.enable_ahb_md_endian_swap = 1
-	#else
+#else
 	.enable_ahb_md_endian_swap = 0
-	#endif
+#endif
 };
 
 /* GEM2 run-time device data */
-
-static struct eth_xlnx_gem_dev_data eth_xlnx_gem2_dev_data = { 
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_MAC_DEVTREE
-	/* Obtain the MAC address from the device tree data */
-	.mac_addr = DT_PROP(DT_NODELABEL(gem2), local_mac_address),
-	#else
-	/* Obtain the MAC address from autoconf */
-	.mac_addr = {
-		CONFIG_ETH_XLNX_GEM_PORT_2_MAC_BYTE_5,
-		CONFIG_ETH_XLNX_GEM_PORT_2_MAC_BYTE_4,
-		CONFIG_ETH_XLNX_GEM_PORT_2_MAC_BYTE_3,
-		CONFIG_ETH_XLNX_GEM_PORT_2_MAC_BYTE_2,
-		CONFIG_ETH_XLNX_GEM_PORT_2_MAC_BYTE_1,
-		CONFIG_ETH_XLNX_GEM_PORT_2_MAC_BYTE_0},
-	#endif
+static struct eth_xlnx_gem_dev_data eth_xlnx_gem2_dev_data = {
+	.mac_addr        = DT_PROP(DT_NODELABEL(gem2), local_mac_address),
 	.started         = 0,
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO,
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
@@ -1306,17 +1143,17 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem2_dev_data = {
 	.first_tx_buffer = NULL
 };
 
-#ifndef CONFIG_ETH_XLNX_GEM_PORT_2_DMA_FIXED 
-static struct eth_xlnx_dma_area_gem2 dma_area_gem2; 
+#ifndef CONFIG_ETH_XLNX_GEM_PORT_2_DMA_FIXED
+static struct eth_xlnx_dma_area_gem2 dma_area_gem2;
 #endif
 
 /* GEM2 driver auxiliary thread stack declaration */
-
+#ifdef ETH_XLNX_GEM_PORT_2_USES_THREAD
 K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem2,
 	CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_STACK_SIZE);
+#endif
 
 /* GEM2 driver instance declaration */
-
 ETH_NET_DEVICE_INIT(eth_xlnx_gem2, DT_LABEL(DT_NODELABEL(gem2)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
 	&eth_xlnx_gem2_dev_data, &eth_xlnx_gem2_dev_cfg,
@@ -1328,13 +1165,11 @@ ETH_NET_DEVICE_INIT(eth_xlnx_gem2, DT_LABEL(DT_NODELABEL(gem2)),
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_3
 
 /* GEM3 exists on UltraScale targets only! */
-
 #ifdef CONFIG_SOC_XILINX_ZYNQ7000
 #error GEM3 is not supported by the Zynq-7000
 #endif
 
 /* GEM3 DMA area structure declaration */
-
 struct eth_xlnx_dma_area_gem3 {
 	struct eth_xlnx_gem_bd rx_bd[CONFIG_ETH_XLNX_GEM_PORT_3_RXBD_COUNT];
 	struct eth_xlnx_gem_bd tx_bd[CONFIG_ETH_XLNX_GEM_PORT_3_TXBD_COUNT];
@@ -1351,322 +1186,296 @@ struct eth_xlnx_dma_area_gem3 {
 };
 
 /* GEM3 device configuration data */
-
 static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem3_dev_cfg = {
-
 	/* Controller base address -> from device tree data */
 	.base_addr   = DT_REG_ADDR(DT_NODELABEL(gem3)),
-
 	/* IRQ configuration function pointer */
 	.config_func = eth_xlnx_gem_irq_config,
-
-	/* Link speed & PHY init related parameters -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_LINK_10MBIT)
+	/* Maximum supported link speed */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_LINK_10MBIT)
 	.max_link_speed = LINK_10MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_LINK_100MBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_LINK_100MBIT)
 	.max_link_speed = LINK_100MBIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_LINK_1GBIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_LINK_1GBIT)
 	.max_link_speed = LINK_1GBIT,
-	#else
-	#error No valid link speed setting found in GEM3 configuration data
-	#endif
-
-	/* PHY initialization flag -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_INIT_PHY
+#else
+#error No valid maximum link speed setting found in GEM3 configuration data
+#endif
+	/* PHY initialization & management flag  */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_INIT_PHY
 	.init_phy = 1,
-	#else
+#else
 	.init_phy = 0,
-	#endif
-
-	/* Advertise link speeds lower than nominal flag -> from autoconf */ \
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
+#endif
+	/* PHY MDIO const address / auto detection swith */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_PHY_MDIO_ADDRESS
+	.phy_mdio_addr_fix = CONFIG_ETH_XLNX_GEM_PORT_3_PHY_MDIO_ADDRESS,
+#else
+	.phy_mdio_addr_fix = 0,
+#endif
+	/* Advertise link speeds lower than nominal flag */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
 	.phy_advertise_lower = 1,
-	#else
+#else
 	.phy_advertise_lower = 0,
-	#endif
-
-	/* AMBA AHB data bus width setting -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_32BIT)
+#endif
+	/* Deferred processing settings */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING
+	.defer_rxp_to_thread = 1,
+#else
+	.defer_rxp_to_thread = 0,
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE
+	.defer_txd_to_thread = 1,
+#else
+	.defer_txd_to_thread = 0,
+#endif
+	/* Auxiliary thread priority (if applicable) */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO
+	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO,
+#else
+	.aux_thread_prio = 0,
+#endif
+	/* AMBA AHB data bus width setting */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_32BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_32BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_64BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_64BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_64BIT,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_128BIT)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_128BIT)
 	.amba_dbus_width = AMBA_AHB_DBUS_WIDTH_128BIT,
-	#else
-	#error No valid AMBA AHB data bus width setting found in \
-		GEM3 configuration data
-	#endif
-
-	/* AMBA AHB burst length -> from autoconf */
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_SINGLE)
+#else
+#error No valid AMBA AHB data bus width setting found in \
+	GEM3 configuration data
+#endif
+	/* AMBA AHB burst length */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_SINGLE)
 	.ahb_burst_length = AHB_BURST_SINGLE,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_INCR4)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_INCR4)
 	.ahb_burst_length = AHB_BURST_INCR4,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_INCR8)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_INCR8)
 	.ahb_burst_length = AHB_BURST_INCR8,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_INCR16)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_AHBBURST_INCR16)
 	.ahb_burst_length = AHB_BURST_INCR16,
-	#else
-	#error No valid AMBA AHB burst length setting found in \
-		GEM3 configuration data
-	#endif
-
-	/* Hardware RX buffer size -> from autoconf */ \
-
-	#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_FULL)
+#else
+#error No valid AMBA AHB burst length setting found in \
+	GEM3 configuration data
+#endif
+	/* Hardware RX buffer size */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_FULL)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_8KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_4KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_4KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_4KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_2KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_2KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_2KB,
-	#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_1KB)
+#elif defined(CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_SIZE_1KB)
 	.hw_rx_buffer_size = HWRX_BUFFER_SIZE_1KB,
-	#else
-	#error No valid Hardware RX buffer size setting found in \
-		GEM3 configuration data
-	#endif
-
-	/* RX buffer offset -> from autoconf */
+#else
+#error No valid Hardware RX buffer size setting found in \
+	GEM3 configuration data
+#endif
+	/* RX buffer offset */
 	.hw_rx_buffer_offset = CONFIG_ETH_XLNX_GEM_PORT_3_HWRX_BUFFER_OFFSET,
-	/* AHB RX buffer size, n * 64 bytes -> from autoconf */
+	/* AHB RX buffer size, n * 64 bytes */
 	.ahb_rx_buffer_size  = CONFIG_ETH_XLNX_GEM_PORT_3_AHB_RX_BUFFER_SIZE,
-	
-	/* As GEM3 is only supported by the UltraScale, skip the Zynq-specific
-	 * clock settings in the configuration data */
+
+	/* As GEM3 is only supported by the UltraScale, skip the Zynq-7000 
+	 * specific clock settings in the configuration data */
 
 	/* Processor system reference clock frequency */
-
 	.reference_clk_freq = CONFIG_ZYNQMP_PS_REF_FREQUENCY,
-
-	/* Reference clock source PLL -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET3_REFCLK_IOPLL)
+	/* Reference clock source PLL */
+#if defined(CONFIG_ZYNQMP_ENET3_REFCLK_IOPLL)
 	.reference_pll			= IO_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET3_REFCLK_RPLL)
+#elif defined(CONFIG_ZYNQMP_ENET3_REFCLK_RPLL)
 	.reference_pll			= R_PLL,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_ENET3_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_ENET3_REFCLK_DPLL)
 	.reference_pll			= D_PLL_TO_LPD,
 	.reference_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No RX clock reference PLL setting found in GEM3 configuration data
-	#endif
-
-	/* GEM3 bit shift count in GEM_CLK_CTRL -> pre-defined by the memory map */
-
+#else
+#error No RX clock reference PLL setting found in GEM3 configuration data
+#endif
+	/* GEM3 bit shift count in GEM_CLK_CTRL -> pre-defined by the 
+	 * system memory map */
 	.gem_clk_ctrl_shift = ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM3,
-
-	/* GEM RX clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET3_RXCLK_MIO)
+	/* GEM RX clock source */
+#if defined(CONFIG_ZYNQMP_ENET3_RXCLK_MIO)
 	.gem_rx_clk_source = CLK_SRC_MIO,
-	#elif defined(CONFIG_ZYNQMP_ENET3_RXCLK_EMIO)
+#elif defined(CONFIG_ZYNQMP_ENET3_RXCLK_EMIO)
 	.gem_rx_clk_source = CLK_SRC_EMIO,
-	#else
-	#error No RX clock source setting found in GEM3 configuration data
-	#endif
-
-	/* GEM Reference clock source -> from autoconf */
-
-	#if defined(CONFIG_ZYNQMP_ENET3_REFCLK_PLL)
+#else
+#error No RX clock source setting found in GEM3 configuration data
+#endif
+	/* GEM Reference clock source */
+#if defined(CONFIG_ZYNQMP_ENET3_REFCLK_PLL)
 	.gem_tx_clk_source = CLK_SRC_PLL_REF,
-	#elif defined(CONFIG_ZYNQMP_ENET3_REFCLK_EMIO_GTX)
+#elif defined(CONFIG_ZYNQMP_ENET3_REFCLK_EMIO_GTX)
 	.gem_tx_clk_source = CLK_SRC_EMIO_PLL_GTX,
-	#else
-	#error No reference clock source setting found in GEM3 configuration data
-	#endif
-
-	/* Initial GEM Reference clock divisors -> from autoconf */
-
+#else
+#error No reference clock source setting found in GEM3 configuration data
+#endif
+	/* Initial GEM Reference clock divisors */
 	.gem_clk_divisor1 = CONFIG_ZYNQMP_ENET3_DIVISOR1,
 	.gem_clk_divisor0 = CONFIG_ZYNQMP_ENET3_DIVISOR0,
-
-	/* Ref CLK control register -> pre-defined by the memory map */
-
-	.crl_apb_ref_ctrl_register_addr = ETH_XLNX_CRL_APB_GEM3_REF_CTRL_REGISTER,
-
-	/* LPD LSBUS clock source PLL -> from autoconf */
-
-	#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
+	/* Ref CLK control register -> pre-defined by the system memory map */
+	.crl_apb_ref_ctrl_register_addr =
+		ETH_XLNX_CRL_APB_GEM3_REF_CTRL_REGISTER,
+	/* LPD LSBUS clock source PLL */
+#if   defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_RPLL)
 	.lpd_lsbus_pll			= R_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_RPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_IOPLL)
 	.lpd_lsbus_pll			= IO_PLL,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_IOPLL_MULTIPLIER,
-	#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
+#elif defined(CONFIG_ZYNQMP_LPD_LSBUS_REFCLK_DPLL)
 	.lpd_lsbus_pll			= D_PLL_TO_LPD,
 	.lpd_lsbus_pll_ref_clk_multi	= CONFIG_ZYNQMP_DPLL_MULTIPLIER,
-	#else
-	#error No LPD LSBUS clock source setting found in ZYNQMP \
-		configuration data
-	#endif
-
+#else
+#error No LPD LSBUS clock source setting found in ZYNQMP configuration data
+#endif
 	.lpd_lsbus_divisor0 = CONFIG_ZYNQMP_LPD_LSBUS_DIVISOR0,
-
-	/* DMA area receive / transmit buffer (descriptor) related data
-	 * -> from autoconf */
-
+	/* DMA area receive / transmit buffer (descriptor) related data */
 	.rxbd_count     = CONFIG_ETH_XLNX_GEM_PORT_3_RXBD_COUNT,
 	.txbd_count     = CONFIG_ETH_XLNX_GEM_PORT_3_TXBD_COUNT,
 	.rx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_3_RX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
 	.tx_buffer_size = ((CONFIG_ETH_XLNX_GEM_PORT_3_TX_BUFFER_SIZE
-		+ (ETH_XLNX_BUFFER_ALIGNMENT-1)) & ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
-
-	/* Feature flags, mostly targeting the gem.net_cfg register
-	 * -> from autoconf */
-
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_IGNORE_IGP_RXER
+		+ (ETH_XLNX_BUFFER_ALIGNMENT-1))
+		& ~(ETH_XLNX_BUFFER_ALIGNMENT-1)),
+	/* Feature flags, mostly targeting the gem.net_cfg register */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_IGNORE_IGP_RXER
 	.ignore_igp_rxer = 1,
-	#else
+#else
 	.ignore_igp_rxer = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_REJECT_NSP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_REJECT_NSP
 	.disable_reject_nsp = 1,
-	#else
+#else
 	.disable_reject_nsp = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_IGP_STRETCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_IGP_STRETCH
 	.enable_igp_stretch = 1,
-	#else
+#else
 	.enable_igp_stretch = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_SGMII_MODE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_SGMII_MODE
 	.enable_sgmii_mode = 1,
-	#else
+#else
 	.enable_sgmii_mode = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_REJECT_FCS_CRC_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_REJECT_FCS_CRC_ERRORS
 	.disable_reject_fcs_crc_errors = 1,
-	#else
+#else
 	.disable_reject_fcs_crc_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_RX_HALFDUP_WHILE_TX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_RX_HALFDUP_WHILE_TX
 	.enable_rx_halfdup_while_tx = 1,
-	#else
+#else
 	.enable_rx_halfdup_while_tx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_RX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_RX_CHKSUM_OFFLOAD
 	.enable_rx_chksum_offload = 1,
-	#else
+#else
 	.enable_rx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_PAUSE_COPY
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_PAUSE_COPY
 	.disable_pause_copy = 1,
-	#else
+#else
 	.disable_pause_copy = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISCARD_RX_FCS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISCARD_RX_FCS
 	.discard_rx_fcs = 1,
-	#else
+#else
 	.discard_rx_fcs = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISCARD_RX_LENGTH_ERRORS
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISCARD_RX_LENGTH_ERRORS
 	.discard_rx_length_errors = 1,
-	#else
+#else
 	.discard_rx_length_errors = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_PAUSE
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_PAUSE
 	.enable_pause = 1,
-	#else
+#else
 	.enable_pause = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_TBI
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_TBI
 	.enable_tbi = 1,
-	#else
+#else
 	.enable_tbi = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_EXT_ADDR_MATCH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_EXT_ADDR_MATCH
 	.ext_addr_match = 1,
-	#else
+#else
 	.ext_addr_match = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_1536_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_1536_FRAMES
 	.enable_1536_frames = 1,
-	#else
+#else
 	.enable_1536_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_UCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_UCAST_HASH
 	.enable_ucast_hash = 1,
-	#else
+#else
 	.enable_ucast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_MCAST_HASH
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_MCAST_HASH
 	.enable_mcast_hash = 1,
-	#else
+#else
 	.enable_mcast_hash = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_BCAST
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISABLE_BCAST
 	.disable_bcast = 1,
-	#else
+#else
 	.disable_bcast = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_COPY_ALL_FRAMES
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_COPY_ALL_FRAMES
 	.copy_all_frames = 1,
-	#else
+#else
 	.copy_all_frames = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISCARD_NON_VLAN
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISCARD_NON_VLAN
 	.discard_non_vlan = 1,
-	#else
+#else
 	.discard_non_vlan = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_FDX
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_FDX
 	.enable_fdx = 1,
-	#else
+#else
 	.enable_fdx = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISC_RX_AHB_UNAVAIL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DISC_RX_AHB_UNAVAIL
 	.disc_rx_ahb_unavail = 1,
-	#else
+#else
 	.disc_rx_ahb_unavail = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_TX_CHKSUM_OFFLOAD
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_TX_CHKSUM_OFFLOAD
 	.enable_tx_chksum_offload = 1,
-	#else
+#else
 	.enable_tx_chksum_offload = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_HWTX_BUFFER_SIZE_FULL
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_HWTX_BUFFER_SIZE_FULL
 	.tx_buffer_size_full = 1,
-	#else
+#else
 	.tx_buffer_size_full = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_AHB_PACKET_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_AHB_PACKET_ENDIAN_SWAP
 	.enable_ahb_packet_endian_swap = 1,
-	#else
+#else
 	.enable_ahb_packet_endian_swap = 0,
-	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_AHB_MD_ENDIAN_SWAP
+#endif
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_ENABLE_AHB_MD_ENDIAN_SWAP
 	.enable_ahb_md_endian_swap = 1
-	#else
+#else
 	.enable_ahb_md_endian_swap = 0
-	#endif
+#endif
 };
 
 /* GEM3 run-time device data */
-
-static struct eth_xlnx_gem_dev_data eth_xlnx_gem3_dev_data = { 
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_MAC_DEVTREE
-	/* Obtain the MAC address from the device tree data */
-	.mac_addr = DT_PROP(DT_NODELABEL(gem3), local_mac_address),
-	#else
-	/* Obtain the MAC address from autoconf */
-	.mac_addr = {
-		CONFIG_ETH_XLNX_GEM_PORT_3_MAC_BYTE_5,
-		CONFIG_ETH_XLNX_GEM_PORT_3_MAC_BYTE_4,
-		CONFIG_ETH_XLNX_GEM_PORT_3_MAC_BYTE_3,
-		CONFIG_ETH_XLNX_GEM_PORT_3_MAC_BYTE_2,
-		CONFIG_ETH_XLNX_GEM_PORT_3_MAC_BYTE_1,
-		CONFIG_ETH_XLNX_GEM_PORT_3_MAC_BYTE_0},
-	#endif
+static struct eth_xlnx_gem_dev_data eth_xlnx_gem3_dev_data = {
+	.mac_addr        = DT_PROP(DT_NODELABEL(gem3), local_mac_address),
 	.started         = 0,
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO,
 	.eff_link_speed  = LINK_DOWN,
 	.phy_addr        = 0,
 	.phy_id          = 0,
@@ -1676,17 +1485,17 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem3_dev_data = {
 	.first_tx_buffer = NULL
 };
 
-#ifndef CONFIG_ETH_XLNX_GEM_PORT_3_DMA_FIXED 
-static struct eth_xlnx_dma_area_gem3 dma_area_gem3; 
+#ifndef CONFIG_ETH_XLNX_GEM_PORT_3_DMA_FIXED
+static struct eth_xlnx_dma_area_gem3 dma_area_gem3;
 #endif
 
 /* GEM3 driver auxiliary thread stack declaration */
-
+#ifdef ETH_XLNX_GEM_PORT_3_USES_THREAD
 K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem3,
 	CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_STACK_SIZE);
+#endif
 
 /* GEM3 driver instance declaration */
-
 ETH_NET_DEVICE_INIT(eth_xlnx_gem3, DT_LABEL(DT_NODELABEL(gem3)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
 	&eth_xlnx_gem3_dev_data, &eth_xlnx_gem3_dev_cfg,
@@ -1696,22 +1505,24 @@ ETH_NET_DEVICE_INIT(eth_xlnx_gem3, DT_LABEL(DT_NODELABEL(gem3)),
 #endif /* GEM3 active */
 
 /* Timer hook function for PHY link state polling */
-
 static void eth_xlnx_gem_aux_timer (struct k_timer *timer_id) 
 {
 	struct net_if *iface = (struct net_if*)timer_id->user_data;
 	struct device *dev = net_if_get_device(iface);
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
+	const uint8_t aux_thread_notify = ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT;
 	int msgq_rc = 0;
 
-	uint8_t aux_thread_notify = ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT;
+	if (dev_conf->init_phy == 0) {
+		return;
+	}
 
 	/* Trigger the respective auxiliary thread by posting the POLL_PHY 
-	 * bit into the thread's mailbox */
+	 * bit into the thread's message queue */
+	msgq_rc = k_msgq_put(&dev_data->aux_thread_msgq,
+		(void*)&aux_thread_notify, K_NO_WAIT);
 
-	msgq_rc = k_msgq_put(&dev_data->aux_thread_msgq, &aux_thread_notify,
-		K_NO_WAIT);
 	if (msgq_rc < 0) {
 		LOG_ERR("GEM@0x%08X auxiliary thread notification for "
 			"PHY status polling failed - k_msgq_put returns %d",
@@ -1722,7 +1533,6 @@ static void eth_xlnx_gem_aux_timer (struct k_timer *timer_id)
 
 /* Auxiliary thread function. Handles RX/TX done indications as well as
  * periodic triggers for PHY link state monitoring */
-
 static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3) 
 {
 	struct device			*dev              = (struct device*)p1;
@@ -1753,11 +1563,14 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 
 	uint16_t			phy_status        = 0x0000;
 	uint8_t				link_status       = 0x00;
+	uint8_t				started_pre       = 0;
 
 	ARG_UNUSED(p3);
 
 	while (1) {
-		k_msgq_get(&dev_data->aux_thread_msgq, &aux_thread_notify, K_FOREVER);
+		k_msgq_get(&dev_data->aux_thread_msgq,
+			&aux_thread_notify, K_FOREVER);
+
 		if ((aux_thread_notify & ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT) != 0) {
 
 			if (dev_data->phy_access_api != NULL) {
@@ -1768,8 +1581,8 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 					| PHY_XLNX_GEM_EVENT_LINK_STATE_CHANGED
 					| PHY_XLNX_GEM_EVENT_AUTONEG_COMPLETE)) != 0) {
 
-					/* Read the PHY's link status. Handling a 'link down' event is
-					* the possible simplest case */
+					/* Read the PHY's link status. Handling a 'link down'
+					 * event the simplest possible case */
 
 					link_status = dev_data->phy_access_api->phy_poll_link_status_func(dev);
 
@@ -1800,7 +1613,7 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 						* to the Ethernet layer that the interface is back up 
 						* again */
 
-						if (dev_data->started == 1) {
+						if ((started_pre = dev_data->started) == 1) {
 							eth_xlnx_gem_stop_device(dev);
 						}
 
@@ -1810,7 +1623,7 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 						eth_xlnx_gem_configure_buffers(dev);
 						net_eth_carrier_on(iface);
 
-						if (dev_data->started == 1) {
+						if (started_pre == 1) {
 							eth_xlnx_gem_start_device(dev);
 						}
 
@@ -1994,7 +1807,8 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 							
 							for (iter = 0; iter < eff_copy_len; iter++) {
 								if (iter % 16 == 0) {
-									printk("\nGEM@0x%08X RX BD[%02d] +%04X: ", dev_conf->base_addr, curr_bd_idx, iter);
+									printk("\nGEM@0x%08X RX BD[%02d] +%04X: ",
+										dev_conf->base_addr, curr_bd_idx, iter);
 								}
 								printk("%02X ", *dbg_data++);
 							}
@@ -2072,18 +1886,15 @@ static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
 
 static int eth_xlnx_gem_dev_init (struct device *dev) {
 	struct eth_xlnx_gem_dev_cfg *dev_conf = DEV_CFG(dev);
-
 	uint32_t reg_val = 0;
 
-	#ifdef CONFIG_SOC_XILINX_ZYNQ7000
-
+#ifdef CONFIG_SOC_XILINX_ZYNQ7000
 	/* The PS7Init code generated by the Xilinx toolchain already configures
 	 * the relevant clocks, just in case that this initialization has not been
 	 * performed, set the clock configuration explicitly. All registers 
 	 * affected by this (re-)configuration are located within the SLCR */
 	eth_xlnx_gem_amba_clk_enable(dev);
-
-	#endif
+#endif
 
 	/* Initialization procedure as described in the Zynq-7000 TRM, 
 	 * chapter 16.3.x */
@@ -2113,7 +1924,6 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
 
 	/* Set the initial contents of the current instance's run-time data */
-
 	dev_data->iface = iface;
 
 	net_if_set_link_addr(iface, dev_data->mac_addr, 6, NET_LINK_ETHERNET);
@@ -2148,17 +1958,22 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 	/* Initialize TX completion semaphore */
 	k_sem_init(&dev_data->tx_done_sem, 0, 1);
 
-	/* Initialize semaphores in the RX/TX BD ring values which have not yet
-	 * been initialized */
+	/* Initialize semaphores in the RX/TX BD ring values which have not
+	 * yet been initialized */
 	k_sem_init(&dev_data->rxbd_ring.ring_sem, 1, 1);
 	k_sem_init(&dev_data->txbd_ring.ring_sem, 1, 1);
 
-	/* Initialize the mailbox for the auxiliary thread */
-	k_msgq_init(
-		&dev_data->aux_thread_msgq,
-		dev_data->aux_thread_msgq_data,
-		sizeof(uint8_t),
-		10);
+	/* Initialize the message queue for the auxiliary thread (if appli-
+	 * cable) */
+	if (dev_conf->init_phy == 1
+		|| dev_conf->defer_rxp_to_thread == 1
+		|| dev_conf->defer_txd_to_thread == 1) {
+		k_msgq_init(
+			&dev_data->aux_thread_msgq,
+			dev_data->aux_thread_msgq_data,
+			sizeof(uint8_t),
+			10);
+	}
 
 	/* Initialize the timer for the auxiliary thread if the PHY of the
 	 * respective GEM is managed by the corresponding driver's instance
@@ -2172,16 +1987,16 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 	}
 
 	/* Initialize & start the auxiliary thread for each device */
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_0
+	#ifdef ETH_XLNX_GEM_PORT_0_USES_THREAD
 	ETH_XLNX_GEM_AUX_THREAD_START(0);
 	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_1
+	#ifdef ETH_XLNX_GEM_PORT_1_USES_THREAD
 	ETH_XLNX_GEM_AUX_THREAD_START(1);
 	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_2
+	#ifdef ETH_XLNX_GEM_PORT_2_USES_THREAD
 	ETH_XLNX_GEM_AUX_THREAD_START(2);
 	#endif
-	#ifdef CONFIG_ETH_XLNX_GEM_PORT_3
+	#ifdef ETH_XLNX_GEM_PORT_3_USES_THREAD
 	ETH_XLNX_GEM_AUX_THREAD_START(3);
 	#endif
 
@@ -2199,40 +2014,19 @@ static void eth_xlnx_gem_irq_config (struct device *dev)
 {
 	struct eth_xlnx_gem_dev_cfg *dev_conf = DEV_CFG(dev);
 
-	/* Attach to the respective GEM's general IRQ line. The GEMs'
-	 * Wake-on-LAN IRQs are not yet supported */
-
+	/* Attach to the respective GEM's general IRQ.
+	 * The GEMs' Wake-on-LAN IRQs are not yet supported */
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_0
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem0))) {
-		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem0)),
-			DT_IRQ(DT_NODELABEL(gem0), priority),
-			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem0), 0);
-		irq_enable(DT_IRQN(DT_NODELABEL(gem0)));
-	}
+	ETH_XLNX_GEM_CONFIG_IRQ(0);
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_1
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem1))) {
-		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem1)),
-			DT_IRQ(DT_NODELABEL(gem1), priority),
-			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem1), 0);
-		irq_enableDT_IRQN(DT_NODELABEL(gem1)));
-	}
+	ETH_XLNX_GEM_CONFIG_IRQ(1);
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_2
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem2))) {
-		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem2)),
-			DT_IRQ(DT_NODELABEL(gem2), priority),
-			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem2), 0);
-		irq_enable(DT_IRQN(DT_NODELABEL(gem2)));
-	}
+	ETH_XLNX_GEM_CONFIG_IRQ(2);
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_3
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem3))) {
-		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem3)),
-			DT_IRQ(DT_NODELABEL(gem3), priority),
-			eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem3), 0);
-		irq_enable(DT_IRQN(DT_NODELABEL(gem3)));
-	}
+	ETH_XLNX_GEM_CONFIG_IRQ(3);
 #endif
 }
 
@@ -2304,13 +2098,18 @@ static int eth_xlnx_gem_start_device (struct device *dev)
 		dev_conf->base_addr + ETH_XLNX_GEM_ISR_OFFSET);
 
 	/* Clear RX & TX status registers */
-	sys_write32(0xFFFFFFFF, dev_conf->base_addr + ETH_XLNX_GEM_TXSR_OFFSET);
-	sys_write32(0xFFFFFFFF, dev_conf->base_addr + ETH_XLNX_GEM_RXSR_OFFSET);
+	sys_write32(0xFFFFFFFF,
+		dev_conf->base_addr + ETH_XLNX_GEM_TXSR_OFFSET);
+	sys_write32(0xFFFFFFFF,
+		dev_conf->base_addr + ETH_XLNX_GEM_RXSR_OFFSET);
 
 	/* RX and TX enable */
-	reg_val  = sys_read32(dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
-	reg_val |= (ETH_XLNX_GEM_NWCTRL_RXEN_BIT | ETH_XLNX_GEM_NWCTRL_TXEN_BIT);
-	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	reg_val  = sys_read32(
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	reg_val |= (ETH_XLNX_GEM_NWCTRL_RXEN_BIT
+		| ETH_XLNX_GEM_NWCTRL_TXEN_BIT);
+	sys_write32(reg_val,
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Indicate carrier on in case there is no PHY attached /
 	 * PHY is not managed by this driver */
@@ -2322,9 +2121,7 @@ static int eth_xlnx_gem_start_device (struct device *dev)
 	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK, 
 		dev_conf->base_addr + ETH_XLNX_GEM_IER_OFFSET);
 
-	LOG_DBG("GEM@0x%08X started",
-		dev_conf->base_addr);
-
+	LOG_DBG("GEM@0x%08X started", dev_conf->base_addr);
 	return 0;
 }
 
@@ -2341,9 +2138,12 @@ static int eth_xlnx_gem_stop_device (struct device *dev)
 	}
 
 	/* RX and TX disable */
-	reg_val  = sys_read32(dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
-	reg_val &= (~(ETH_XLNX_GEM_NWCTRL_RXEN_BIT | ETH_XLNX_GEM_NWCTRL_TXEN_BIT));
-	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	reg_val  = sys_read32(
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	reg_val &= (~(ETH_XLNX_GEM_NWCTRL_RXEN_BIT
+		| ETH_XLNX_GEM_NWCTRL_TXEN_BIT));
+	sys_write32(reg_val, 
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Disable & clear all the MAC interrupts */
 	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK,
@@ -2352,8 +2152,10 @@ static int eth_xlnx_gem_stop_device (struct device *dev)
 		dev_conf->base_addr + ETH_XLNX_GEM_ISR_OFFSET);
 
 	/* Clear RX & TX status registers */
-	sys_write32(0xFFFFFFFF, dev_conf->base_addr + ETH_XLNX_GEM_TXSR_OFFSET);
-	sys_write32(0xFFFFFFFF, dev_conf->base_addr + ETH_XLNX_GEM_RXSR_OFFSET);
+	sys_write32(0xFFFFFFFF,
+		dev_conf->base_addr + ETH_XLNX_GEM_TXSR_OFFSET);
+	sys_write32(0xFFFFFFFF,
+		dev_conf->base_addr + ETH_XLNX_GEM_RXSR_OFFSET);
 
 	/* Indicate carrier off in case there is no PHY attached /
 	 * PHY is not managed by this driver */
@@ -2361,9 +2163,7 @@ static int eth_xlnx_gem_stop_device (struct device *dev)
 		net_eth_carrier_off(dev_data->iface);
 	}
 
-	LOG_DBG("GEM@0x%08X stopped",
-		dev_conf->base_addr);
-
+	LOG_DBG("GEM@0x%08X stopped", dev_conf->base_addr);
 	return 0;
 }
 
@@ -2381,17 +2181,15 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 	uint32_t reg_val = 0;
 
 	pkt_len = net_pkt_get_len(pkt);
-	if (pkt_len == 0)
-	{
+	if (pkt_len == 0) {
 		LOG_ERR("GEM@0x%08X cannot TX, zero packet length",
 			dev_conf->base_addr);
 		return -EINVAL;
 	}
 
-	if (dev_data->eff_link_speed == LINK_DOWN || dev_data->started == 0)
-	{
-		/* Won't write any packets to the TX buffers if the physical link 
-		 * is down */
+	if (dev_data->eff_link_speed == LINK_DOWN || dev_data->started == 0) {
+		/* Won't write any packets to the TX buffers if the physical
+		 * link is down */
 		LOG_DBG("GEM@0x%08X cannot TX, link down",
 			dev_conf->base_addr);
 		return -EIO;
@@ -2404,8 +2202,7 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 
 	/* Check if enough buffer descriptors are available for the amount of
 	 * data to be transmitted */
-	if (bds_reqd > dev_data->txbd_ring.free_bds)
-	{
+	if (bds_reqd > dev_data->txbd_ring.free_bds) {
 		LOG_DBG(
 			"GEM@0x%08X cannot TX, packet length %hu requires"
 			"%hhu BDs, current free count is only %hhu", 
@@ -2429,15 +2226,17 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 	tx_buffer_offs = (uint8_t*)(dev_data->first_tx_buffer
 		+ (dev_conf->tx_buffer_size * curr_bd_idx));
 
-	/* Copy packet data to the target TX data buffers, prepare BDs for TX */
+	/* Copy packet data to the target TX data buffers, prepare BDs for
+	 * transmission */
 	for (frag = pkt->frags; frag; frag = frag->frags) {
 		rem_frag_len = frag->len;
 
 		while (rem_frag_len > 0) {
-			if ((used_in_buf + rem_frag_len) <= dev_conf->tx_buffer_size) {
+			if ((used_in_buf + rem_frag_len)
+				<= dev_conf->tx_buffer_size) {
 
-				/* The current packet fragment fits into the buffer pointed
-				 * to by the current BD */
+				/* The current packet fragment fits into the
+				 * buffer pointed to by the current BD */
 
 #ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
 				uint32_t iter = 0;
@@ -2445,7 +2244,8 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 				
 				for (iter = 0; iter < rem_frag_len; iter++) {
 					if (iter % 16 == 0) {
-						printk("\nGEM@0x%08X TX BD[%02d] FRG %p +%04X: ", dev_conf->base_addr, curr_bd_idx, frag, iter);
+						printk("\nGEM@0x%08X TX BD[%02d] FRG %p +%04X: ",
+							dev_conf->base_addr, curr_bd_idx, frag, iter);
 					}
 					printk("%02X ", *dbg_data++);
 				}
@@ -2460,18 +2260,22 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 				rem_frag_len  = 0;
 			} else {
 
-				/* Only a part of the current packet fragment still fits into
-				 * the buffer pointed to by the current BD 
-				 * -> copy the first part, set up the BD control word, move on
-				 * to the next BD */
+				/* Only a part of the current packet fragment
+				 * still fits into the buffer pointed to by
+				 * the current BD -> copy the first part, set
+				 * up the BD control word, move on to the next
+				 * buffer descriptor */
 
 #ifdef CONFIG_ETH_XLNX_DBG_PRINT_PACKETS_OUT
 				uint32_t iter = 0;
 				uint8_t  *dbg_data = (uint8_t*)frag->data;
 				
-				for (iter = 0; iter < (dev_conf->tx_buffer_size - used_in_buf); iter++) {
+				for (iter = 0;
+					iter < (dev_conf->tx_buffer_size - used_in_buf);
+					iter++) {
 					if (iter % 16 == 0) {
-						printk("\nGEM@0x%08X TX BD[%02d] FRG %p +%04X: ", dev_conf->base_addr, curr_bd_idx, frag, iter);
+						printk("\nGEM@0x%08X TX BD[%02d] FRG %p +%04X: ",
+							dev_conf->base_addr, curr_bd_idx, frag, iter);
 					}
 					printk("%02X ", *dbg_data++);
 				}
@@ -2484,12 +2288,13 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 
 				rem_frag_len -= (dev_conf->tx_buffer_size - used_in_buf);
 
-				/* Read the current BD's control word, set the length infor-
-				 * mation, update BD */
+				/* Read the current BD's control word, set the
+				 * length information, update BD */
 				reg_val = sys_read32(
 					(uint32_t)(&dev_data->txbd_ring.first_bd[curr_bd_idx].ctrl));
 
-				/* Preserve the 'wrap' bit of the current control word */
+				/* Preserve the 'wrap' bit of the current
+				 * control word */
 				reg_val &= ETH_XLNX_GEM_TXBD_WRAP_BIT;
 				reg_val |= 
 					((reg_val & ~ETH_XLNX_GEM_TXBD_LEN_MASK) | dev_conf->tx_buffer_size);
@@ -2517,14 +2322,16 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 	/* Preserve the 'wrap' bit of the current control word */
 	reg_val &= ETH_XLNX_GEM_TXBD_WRAP_BIT;
 	reg_val |= (((reg_val & ~ETH_XLNX_GEM_TXBD_LEN_MASK) | used_in_buf)
-		| ETH_XLNX_GEM_TXBD_LAST_BIT); /* Set the length + 'last' bit */
+		| ETH_XLNX_GEM_TXBD_LAST_BIT); /* Set length + 'last' bit */
 	sys_write32(reg_val,
 		(uint32_t)(&dev_data->txbd_ring.first_bd[curr_bd_idx].ctrl));
 
 	/* Set the start TX bit in the gem.net_ctrl register */
-	reg_val  = sys_read32(dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	reg_val  = sys_read32(
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 	reg_val |= ETH_XLNX_GEM_NWCTRL_STARTTX_BIT;
-	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	sys_write32(reg_val,
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Block until TX has completed */
 	int rc = k_sem_take(&dev_data->tx_done_sem, K_MSEC(5000));
@@ -2543,16 +2350,14 @@ static int eth_xlnx_gem_send (struct device *dev, struct net_pkt *pkt)
 }
 
 #ifdef CONFIG_NET_STATISTICS_ETHERNET
-
 static struct net_stats_eth *eth_xlnx_gem_stats (struct device *dev)
 {
 	return &(DEV_DATA(dev)->stats);
 }
-
 #endif
 
 static enum ethernet_hw_caps eth_xlnx_gem_get_capabilities (
-	struct device *dev) 
+	struct device *dev)
 {
 	struct eth_xlnx_gem_dev_cfg *dev_conf = DEV_CFG(dev);
 	enum ethernet_hw_caps caps = (enum ethernet_hw_caps)0;
@@ -2607,7 +2412,8 @@ static void eth_xlnx_gem_amba_clk_enable (struct device *dev)
 	/* Enable the AMBA Peripheral Clock for the respective GEM */
 
  	/* SLCR unlock */
-	sys_write32(ETH_XLNX_SLCR_UNLOCK_CONSTANT, ETH_XLNX_SLCR_UNLOCK_REGISTER);
+	sys_write32(ETH_XLNX_SLCR_UNLOCK_CONSTANT,
+		ETH_XLNX_SLCR_UNLOCK_REGISTER);
 
 	/* Write the updated AMBA clk config */
 	reg_val  = sys_read32(ETH_XLNX_SLCR_APER_CLK_CTRL_REGISTER);
@@ -2615,7 +2421,8 @@ static void eth_xlnx_gem_amba_clk_enable (struct device *dev)
 	sys_write32(reg_val, ETH_XLNX_SLCR_APER_CLK_CTRL_REGISTER);
 
 	/* SLCR lock */
-	sys_write32(ETH_XLNX_SLCR_LOCK_CONSTANT, ETH_XLNX_SLCR_LOCK_REGISTER);
+	sys_write32(ETH_XLNX_SLCR_LOCK_CONSTANT,
+		ETH_XLNX_SLCR_LOCK_REGISTER);
 }
 #endif /* CONFIG_SOC_XILINX_ZYNQ7000 */
 
@@ -2627,7 +2434,8 @@ static void eth_xlnx_gem_reset_hw (struct device *dev)
 	 * chapter 16.3.1. */
 
 	/* Clear the NWCTRL register */
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	sys_write32(0x00000000,
+		dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Clear the statistics counters */
 	sys_write32(ETH_XLNX_GEM_STATCLR_MASK,
@@ -2644,8 +2452,10 @@ static void eth_xlnx_gem_reset_hw (struct device *dev)
 		dev_conf->base_addr + ETH_XLNX_GEM_IDR_OFFSET);
 
 	/* Clear the buffer queues */
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
+	sys_write32(0x00000000,
+		dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
+	sys_write32(0x00000000,
+		dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
 }
 
 static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
@@ -2663,13 +2473,12 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 	 * p. 1274 ff. */
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-
 	/* MDC divisor depends on the CPU_1X clock frequency - calculation:
 	 * comp. Zynq-7000 TRM chapter 25.3. Calculate the divisor regardless
 	 * of which GEM is being initialized */
 
 	uint32_t cpu_1x_clk = (
-		  (dev_conf->reference_clk_freq * CONFIG_ZYNQ_ARMPLL_MULTIPLIER) 
+		(dev_conf->reference_clk_freq * CONFIG_ZYNQ_ARMPLL_MULTIPLIER)
 		/ CONFIG_ZYNQ_ARMPLL_DIVISOR0);
 
 #if   (defined CONFIG_ZYNQ_CLOCK_RATIO_6321)
@@ -2679,7 +2488,7 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 #else
 #error No clock divisor ratio setting found in ZYNQ configuration, \
 	cannot calculate MDC divider
-#endif /* Zynq clock ratio */
+#endif
 
 	if        (cpu_1x_clk < 20000000) {
 		mdc_divisor = MDC_DIVISOR_8;
@@ -2698,9 +2507,7 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 	} else {
 		mdc_divisor = MDC_DIVISOR_224;
 	}
-
 #elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-
 	/* MDC divisor depends on the LPD LSBUS clock frequency.
 	 * This clock is based either on the IOPLL, RPLL (default)
 	 * or DPLL clock frequency, to which a divisor is applied. 
@@ -2730,117 +2537,94 @@ static void eth_xlnx_gem_set_initial_nwcfg (struct device *dev)
 		/* [30]     ignore IPG rx_er */
 		reg_val |= ETH_XLNX_GEM_NWCFG_IGNIPGRXERR_BIT;
 	}
-
 	if (dev_conf->disable_reject_nsp == 1) {
 		/* [29]     disable rejection of non-standard preamble */
 		reg_val |= ETH_XLNX_GEM_NWCFG_BADPREAMBEN_BIT;
 	}
-
 	if (dev_conf->enable_igp_stretch == 1) {
 		/* [28]     enable IPG stretch */
 		reg_val |= ETH_XLNX_GEM_NWCFG_IPDSTRETCH_BIT;
 	}
-
 	if (dev_conf->enable_sgmii_mode == 1) {
 		/* [27]     SGMII mode enable */
 		reg_val |= ETH_XLNX_GEM_NWCFG_SGMIIEN_BIT;
 	}
-
 	if (dev_conf->disable_reject_fcs_crc_errors == 1) {
 		/* [26]     disable rejection of FCS/CRC errors */
 		reg_val |= ETH_XLNX_GEM_NWCFG_FCSIGNORE_BIT;
 	}
-
 	if (dev_conf->enable_rx_halfdup_while_tx == 1) {
 		/* [25]     RX half duplex while TX enable */
 		reg_val |= ETH_XLNX_GEM_NWCFG_HDRXEN_BIT;
 	}
-
 	if (dev_conf->enable_rx_chksum_offload == 1) {
 		/* [24]     enable RX IP/TCP/UDP checksum offload */
 		reg_val |= ETH_XLNX_GEM_NWCFG_RXCHKSUMEN_BIT;
 	}
-
 	if (dev_conf->disable_pause_copy == 1) {
 		/* [23]     Do not copy pause Frames to memory */
 		reg_val |= ETH_XLNX_GEM_NWCFG_PAUSECOPYDI_BIT;
 	}
-
-		/* [22..21] Data bus width */
-		reg_val |= (((uint32_t)(dev_conf->amba_dbus_width)
-			& ETH_XLNX_GEM_NWCFG_DBUSW_MASK)
-			<< ETH_XLNX_GEM_NWCFG_DBUSW_SHIFT);
-
-		/* [20..18] MDC clock divisor */
-		reg_val |= (((uint32_t)mdc_divisor
-			& ETH_XLNX_GEM_NWCFG_MDC_MASK)
-			<< ETH_XLNX_GEM_NWCFG_MDC_SHIFT);
-
+	/* [22..21] Data bus width */
+	reg_val |= (((uint32_t)(dev_conf->amba_dbus_width)
+		& ETH_XLNX_GEM_NWCFG_DBUSW_MASK)
+		<< ETH_XLNX_GEM_NWCFG_DBUSW_SHIFT);
+	/* [20..18] MDC clock divisor */
+	reg_val |= (((uint32_t)mdc_divisor
+		& ETH_XLNX_GEM_NWCFG_MDC_MASK)
+		<< ETH_XLNX_GEM_NWCFG_MDC_SHIFT);
 	if (dev_conf->discard_rx_fcs == 1) {
 		/* [17]     Discard FCS from received frames */
 		reg_val |= ETH_XLNX_GEM_NWCFG_FCSREM_BIT;
 	}
-
 	if (dev_conf->discard_rx_length_errors == 1) {
 		/* [16]     RX length error discard */
 		reg_val |= ETH_XLNX_GEM_NWCFG_LENGTHERRDSCRD_BIT;
 	}
-
-		/* [15..14] RX buffer offset */
-		reg_val |= (((uint32_t)dev_conf->hw_rx_buffer_offset 
-			& ETH_XLNX_GEM_NWCFG_RXOFFS_MASK)
-			<< ETH_XLNX_GEM_NWCFG_RXOFFS_SHIFT);
-
+	/* [15..14] RX buffer offset */
+	reg_val |= (((uint32_t)dev_conf->hw_rx_buffer_offset 
+		& ETH_XLNX_GEM_NWCFG_RXOFFS_MASK)
+		<< ETH_XLNX_GEM_NWCFG_RXOFFS_SHIFT);
 	if (dev_conf->enable_pause == 1) {
 		/* [13]     Enable pause TX */
 		reg_val |= ETH_XLNX_GEM_NWCFG_PAUSEEN_BIT;
 	}
-
 	if (dev_conf->enable_tbi == 1) {
 		/* [11]     enable TBI instead of GMII/MII */
 		reg_val |= ETH_XLNX_GEM_NWCFG_TBIINSTEAD_BIT;
 	}
-
 	if (dev_conf->ext_addr_match == 1) {
 		/* [09]     External address match enable */
 		reg_val |= ETH_XLNX_GEM_NWCFG_EXTADDRMATCHEN_BIT;
 	}
-
 	if (dev_conf->enable_1536_frames == 1) {
 		/* [08]     Enable 1536 byte frames reception */
 		reg_val |= ETH_XLNX_GEM_NWCFG_1536RXEN_BIT;
 	}
-
 	if (dev_conf->enable_ucast_hash == 1) {
 		/* [07]     Receive unicast hash frames */
 		reg_val |= ETH_XLNX_GEM_NWCFG_UCASTHASHEN_BIT;
 	}
-
 	if (dev_conf->enable_mcast_hash == 1) {
 		/* [06]     Receive multicast hash frames */
 		reg_val |= ETH_XLNX_GEM_NWCFG_MCASTHASHEN_BIT;
 	}
-
 	if (dev_conf->disable_bcast == 1) {
 		/* [05]     Do not receive broadcast frames */
 		reg_val |= ETH_XLNX_GEM_NWCFG_BCASTDIS_BIT;
 	}
-
 	if (dev_conf->copy_all_frames == 1) {
 		/* [04]     Copy all frames */
 		reg_val |= ETH_XLNX_GEM_NWCFG_COPYALLEN_BIT;
 	}
-
 	if (dev_conf->discard_non_vlan == 1) {
 		/* [02]     Receive only VLAN frames */
 		reg_val |= ETH_XLNX_GEM_NWCFG_NVLANDISC_BIT;
 	}
-
 	if (dev_conf->enable_fdx == 1) {
 		/* [01]     enable Full duplex */
 		reg_val |= ETH_XLNX_GEM_NWCFG_FDEN_BIT;
 	}
-
 	if (dev_conf->max_link_speed == LINK_100MBIT) {
 		/* [00]     10 or 100 Mbs */
 		reg_val |= ETH_XLNX_GEM_NWCFG_100_BIT;
@@ -2870,49 +2654,39 @@ static void eth_xlnx_gem_set_initial_dmacr (struct device *dev)
 		/* [24]     Discard RX packet when AHB unavailable */
 		reg_val |= ETH_XLNX_GEM_DMACR_DISCNOAHB_BIT;
 	}
-
 	/* [23..16] DMA RX buffer size in AHB system memory
 	 *    e.g.: 0x02 = 128, 0x18 = 1536, 0xA0 = 10240  */
-
 	reg_val |= (
 		((uint32_t)dev_conf->ahb_rx_buffer_size
 		& ETH_XLNX_GEM_DMACR_RX_BUF_MASK)
 		<< ETH_XLNX_GEM_DMACR_RX_BUF_SHIFT);
-
 	if (dev_conf->enable_tx_chksum_offload == 1) {
 		/* [11]     TX TCP/UDP/IP checksum offload to GEM */
 		reg_val |= ETH_XLNX_GEM_DMACR_TCP_CHKSUM_BIT;
 	}
-
 	if (dev_conf->tx_buffer_size_full == 1) {
 		/* [10]     TX buffer memory size select */
 		reg_val |= ETH_XLNX_GEM_DMACR_TX_SIZE_BIT;
 	}
-
 	/* [09..08] RX packet buffer memory size select
 	 *          0 = 1kB, 1 = 2kB, 2 = 4kB, 3 = 8kB */
-
 	reg_val |= (
 		((uint32_t)dev_conf->hw_rx_buffer_size
 		<< ETH_XLNX_GEM_DMACR_RX_SIZE_SHIFT)
 		& ETH_XLNX_GEM_DMACR_RX_SIZE_MASK);
-
 	if (dev_conf->enable_ahb_packet_endian_swap == 1) {
 		/* [07]     AHB packet data endian swap enable */
 		reg_val |= ETH_XLNX_GEM_DMACR_ENDIAN_BIT;
 	}
-
 	if (dev_conf->enable_ahb_md_endian_swap == 1) {
 		/* [06]     AHB mgmt descriptor endian swap enable */
 		reg_val |= ETH_XLNX_GEM_DMACR_DESCR_ENDIAN_BIT;
 	}
-
 	/* [04..00] AHB fixed burst length for DMA ops.
 	 *          00001 = single AHB bursts,
 	 *          001xx = attempt to use INCR4  bursts,
 	 *          01xxx = attempt to use INCR8  bursts,
 	 *          1xxxx = attempt to use INCR15 bursts */
-
 	reg_val |= ((uint32_t)dev_conf->ahb_burst_length 
 		& ETH_XLNX_GEM_DMACR_AHB_BURST_LENGTH_MASK);
 
@@ -2924,7 +2698,6 @@ static void eth_xlnx_gem_set_mac_address (struct device *dev)
 {
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-
 	uint32_t regval_top = 0;
 	uint32_t regval_bot = 0;
 
@@ -2967,7 +2740,6 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-
 	uint32_t reg_val = 0;
 	uint32_t div0    = dev_conf->gem_clk_divisor0;
 	uint32_t div1    = dev_conf->gem_clk_divisor1;
@@ -3025,12 +2797,13 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 	}
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-	
-	/* SLCR unlock */
-	sys_write32(ETH_XLNX_SLCR_UNLOCK_CONSTANT, ETH_XLNX_SLCR_UNLOCK_REGISTER);
 
-	/* Write the respective GEM's (R)CLK configuration registers in the SLCR.
-	 * In both cases, bit [0] is the clock enable bit. */
+	/* SLCR unlock */
+	sys_write32(ETH_XLNX_SLCR_UNLOCK_CONSTANT,
+		ETH_XLNX_SLCR_UNLOCK_REGISTER);
+
+	/* Write the respective GEM's (R)CLK configuration registers in 
+	 * the SLCR. In both cases, bit [0] is the clock enable bit. */
 
 	/* RCLK register */
 	reg_val  = sys_read32(dev_conf->slcr_rclk_register_addr);
@@ -3039,7 +2812,6 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 		(ETH_XLNX_SLCR_RCLK_CTRL_REGISTER_SRC_MASK
 			<< ETH_XLNX_SLCR_RCLK_CTRL_REGISTER_SRC_SHIFT));
 	sys_write32(reg_val, dev_conf->slcr_rclk_register_addr);
-
 	reg_val |= (
 		((uint32_t)dev_conf->gem_clk_source &
 			ETH_XLNX_SLCR_RCLK_CTRL_REGISTER_SRC_MASK)
@@ -3067,7 +2839,8 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 	sys_write32(reg_val, dev_conf->slcr_clk_register_addr);
 
 	/* SLCR lock */
-	sys_write32(ETH_XLNX_SLCR_LOCK_CONSTANT, ETH_XLNX_SLCR_LOCK_REGISTER);
+	sys_write32(ETH_XLNX_SLCR_LOCK_CONSTANT,
+		ETH_XLNX_SLCR_LOCK_REGISTER);
 
 #elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 
@@ -3080,7 +2853,6 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 	if (dev_conf->gem_rx_clk_source == CLK_SRC_EMIO) {
 		reg_val |= (1 << dev_conf->gem_clk_ctrl_shift);
 	}
-
 	if (dev_conf->gem_tx_clk_source == CLK_SRC_EMIO_PLL_GTX) {
 		reg_val |= (1 << (dev_conf->gem_clk_ctrl_shift + 1));
 	}
@@ -3094,7 +2866,7 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 		ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR1_SHIFT);
 	reg_val &= ~(ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR_MASK <<
 		ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR0_SHIFT);
-	
+
 	reg_val |= (ETH_XLNX_CRL_APB_GEMX_REF_CTRL_ACTBITS_MASK << 
 		ETH_XLNX_CRL_APB_GEMX_REF_CTRL_ACTBITS_SHIFT);
 	reg_val |= ((uint32_t)dev_conf->reference_pll & 
@@ -3110,8 +2882,7 @@ static void eth_xlnx_gem_configure_clocks (struct device *dev)
 
 	LOG_DBG(
 		"GEM@0x%08X clock divisors div0/1 %u/%u for target "
-		"freq %u Hz",
-		dev_conf->base_addr, div0, div1, out);
+		"freq %u Hz", dev_conf->base_addr, div0, div1, out);
 }
 
 static void eth_xlnx_gem_init_phy (struct device *dev)
@@ -3142,8 +2913,7 @@ static void eth_xlnx_gem_init_phy (struct device *dev)
 		dev_data->phy_access_api->phy_reset_func(dev);
 		dev_data->phy_access_api->phy_configure_func(dev);
 	} else {
-		LOG_WRN(
-			"GEM@0x%08X no compatible PHY detected", 
+		LOG_WRN("GEM@0x%08X no compatible PHY detected",
 			dev_conf->base_addr);
 	}
 }
@@ -3158,10 +2928,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 	/* Initial configuration of the RX/TX BD rings */
 
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_0
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem0)))
-	{
+	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem0))) {
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DMA_FIXED
-			struct eth_xlnx_dma_area_gem0 *dma_area_gem0 = 
+			struct eth_xlnx_dma_area_gem0 *dma_area_gem0 =
 				(struct eth_xlnx_dma_area_gem0*)
 					CONFIG_ETH_XLNX_GEM_PORT_0_DMA_BASE_ADDRESS;
 
@@ -3179,10 +2948,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 #endif
 
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_1
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem1)))
-	{
+	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem1))) {
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DMA_FIXED
-			struct eth_xlnx_dma_area_gem1 *dma_area_gem1 = 
+			struct eth_xlnx_dma_area_gem1 *dma_area_gem1 =
 				(struct eth_xlnx_dma_area_gem1*)
 					CONFIG_ETH_XLNX_GEM_PORT_1_DMA_BASE_ADDRESS;
 
@@ -3200,10 +2968,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 #endif
 
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_2
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem2)))
-	{
+	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem2))) {
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DMA_FIXED
-			struct eth_xlnx_dma_area_gem2 *dma_area_gem2 = 
+			struct eth_xlnx_dma_area_gem2 *dma_area_gem2 =
 				(struct eth_xlnx_dma_area_gem2*)
 					CONFIG_ETH_XLNX_GEM_PORT_2_DMA_BASE_ADDRESS;
 
@@ -3221,10 +2988,9 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 #endif
 
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_3
-	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem3)))
-	{
+	if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem3))) {
 		#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DMA_FIXED
-			struct eth_xlnx_dma_area_gem3 *dma_area_gem3 = 
+			struct eth_xlnx_dma_area_gem3 *dma_area_gem3 =
 				(struct eth_xlnx_dma_area_gem3*)
 					CONFIG_ETH_XLNX_GEM_PORT_3_DMA_BASE_ADDRESS;
 
@@ -3298,7 +3064,6 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 	dev_data->rxbd_ring.next_to_process = 0;
 	dev_data->rxbd_ring.next_to_use     = 0;
 	dev_data->rxbd_ring.free_bds        = dev_conf->rxbd_count;
-
 	dev_data->txbd_ring.next_to_process = 0;
 	dev_data->txbd_ring.next_to_use     = 0;
 	dev_data->txbd_ring.free_bds        = dev_conf->txbd_count;

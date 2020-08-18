@@ -254,11 +254,115 @@
 #define DEV_DATA(dev) \
 	((struct eth_xlnx_gem_dev_data *)(dev)->driver_data)
 
+/* Device tree / Kconfig data availability checks for all enabled
+ * device instances */
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
+#error Data missing for GEM0: device tree configuration data is unavailable!
+#endif
+
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem0), okay)
+#error GEM0 is marked active in the current device tree, but is not \
+	activated in Kconfig!
+#endif
+
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_1)	&& \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
+#error Data missing for GEM1: device tree configuration data is unavailable!
+#endif
+
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_1) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem1), okay)
+#error GEM1 is marked active in the current device tree, but is not \
+	activated in Kconfig!
+#endif
+
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
+#error Data missing for GEM2: device tree configuration data is unavailable!
+#endif
+
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem2), okay)
+#error GEM2 is marked active in the current device tree, but is not \
+	activated in Kconfig!
+#endif
+
+#if defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
+#error Data missing for GEM3: device tree configuration data is unavailable!
+#endif
+
+#if !defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(gem3), okay)
+#error GEM3 is marked active in the current device tree, but is not \
+	activated in Kconfig!
+#endif
+
+/* Macros determining if each driver instance uses the auxiliary thread */
+#if (defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
+	(defined(CONFIG_ETH_XLNX_GEM_PORT_0_INIT_PHY) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE)))
+#define ETH_XLNX_GEM_PORT_0_USES_THREAD
+#endif
+
+#if (defined(CONFIG_ETH_XLNX_GEM_PORT_1) && \
+	(defined(CONFIG_ETH_XLNX_GEM_PORT_1_INIT_PHY) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE)))
+#define ETH_XLNX_GEM_PORT_1_USES_THREAD
+#endif
+
+#if (defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
+	(defined(CONFIG_ETH_XLNX_GEM_PORT_2_INIT_PHY) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE)))
+#define ETH_XLNX_GEM_PORT_2_USES_THREAD
+#endif
+
+#if (defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
+	(defined(CONFIG_ETH_XLNX_GEM_PORT_3_INIT_PHY) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING) \
+	|| defined(CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE)))
+#define ETH_XLNX_GEM_PORT_3_USES_THREAD
+#endif
+
+/* Macro for starting a GEM device's auxiliary thread */
+#define ETH_XLNX_GEM_AUX_THREAD_START(port) \
+if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem##port)) {\
+	dev_data->aux_thread_tid = k_thread_create( \
+		&dev_data->aux_thread_data, \
+		eth_xlnx_gem_aux_thread_stack_gem##port, \
+		K_THREAD_STACK_SIZEOF(eth_xlnx_gem_aux_thread_stack_gem##port), \
+		eth_xlnx_gem_aux_thread, \
+		(void*)dev, (void*)iface, NULL, \
+		dev_conf->aux_thread_prio, \
+		0, \
+		K_NO_WAIT); \
+}
+
+/* Macro for attaching to a GEM device's IRQ */
+#define ETH_XLNX_GEM_CONFIG_IRQ(port) \
+if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem##port))) { \
+	IRQ_CONNECT(DT_IRQN(DT_NODELABEL(gem##port)), \
+		DT_IRQ(DT_NODELABEL(gem##port), priority), \
+		eth_xlnx_gem_isr, DEVICE_GET(eth_xlnx_gem##port), 0);\
+	irq_enable(DT_IRQN(DT_NODELABEL(gem##port))); \
+}
+
 /* IRQ handler function type */
 typedef void (*eth_xlnx_gem_config_irq_t)(struct device *dev);
 
 /* Enums for bitfields representing configuration settings */
 
+/**
+ * @brief Link speed configuration enumeration type.
+ *
+ * Enumeration type for link speed indication, contains 'link down'
+ * plus all link speeds supported by the controller (10/100/1000).
+ */
 enum eth_xlnx_link_speed
 {
 	/* The values of this enum are consecutively numbered */
@@ -268,6 +372,13 @@ enum eth_xlnx_link_speed
 	LINK_1GBIT
 };
 
+/**
+ * @brief AMBA AHB data bus width configuration enumeration type.
+ *
+ * Enumeration type containing the supported width options for the
+ * AMBA AHB data bus. This is a configuration item in the controller's
+ * net_cfg register.
+ */
 enum eth_xlnx_amba_dbus_width
 {
 	/* The values of this enum are consecutively numbered */
@@ -276,6 +387,14 @@ enum eth_xlnx_amba_dbus_width
 	AMBA_AHB_DBUS_WIDTH_128BIT
 };
 
+/**
+ * @brief MDC clock divisor configuration enumeration type.
+ *
+ * Enumeration type containing the supported clock divider values
+ * used to generate the MDIO interface clock (MDC) from either the
+ * cpu_1x clock (Zynq-7000) or the LPD LSBUS clock (UltraScale).
+ * This is a configuration item in the controller's net_cfg register.
+ */
 enum eth_xlnx_mdc_clock_divisor
 {
 	/* The values of this enum are consecutively numbered */
@@ -289,6 +408,13 @@ enum eth_xlnx_mdc_clock_divisor
 	MDC_DIVISOR_224
 };
 
+/**
+ * @brief DMA RX buffer size configuration enumeration type.
+ *
+ * Enumeration type containing the supported size options for the
+ * DMA receive buffer size in AHB system memory. This is a configuration
+ * item in the controller's dma_cfg register.
+ */
 enum eth_xlnx_hwrx_buffer_size
 {
 	/* The values of this enum are consecutively numbered */
@@ -298,9 +424,18 @@ enum eth_xlnx_hwrx_buffer_size
 	HWRX_BUFFER_SIZE_8KB
 };
 
+/**
+ * @brief AHB burst length configuration enumeration type.
+ *
+ * Enumeration type containing the supported burst length options
+ * for the AHB fixed burst length for DMA data operations. This is a
+ * configuration item in the controller's dma_cfg register.
+ */
 enum eth_xlnx_ahb_burst_length
 {
+	/* The values of this enum are one-hot encoded */
 	AHB_BURST_SINGLE = 1,
+	/* 2 = also AHB_BURST_SINGLE */
 	AHB_BURST_INCR4  = 4,
 	AHB_BURST_INCR8  = 8,
 	AHB_BURST_INCR16 = 16
@@ -308,6 +443,14 @@ enum eth_xlnx_ahb_burst_length
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 
+/**
+ * @brief Reference clock source configuration enumeration type.
+ *
+ * Enumeration type containing the supported clock sources for the
+ * controller's TX reference clock, to which pre-scalers will be
+ * applied depending on the current link speed. This is a Zynq-7000
+ * specific configuration item in the CLK register of the Zynq's SLCR.
+ */
 enum eth_xlnx_ref_pll
 {
 	IO_PLL   = 0,
@@ -316,6 +459,13 @@ enum eth_xlnx_ref_pll
 	EMIO_CLK = 4
 };
 
+/**
+ * @brief RX clock source configuration enumeration type.
+ *
+ * Enumeration type containing the supported clock sources for the
+ * controller's RX clock. This is a Zynq-7000 specific configuration
+ * item in the RCLK register of the Zynq's SLCR.
+ */
 enum eth_xlnx_clk_src
 {
 	/* The values of this enum are consecutively numbered */
@@ -325,6 +475,15 @@ enum eth_xlnx_clk_src
 
 #elif defined(CONFIG_SOC_XILINX_ZYNQMP)
 
+/**
+ * @brief Reference clock PLL configuration enumeration type.
+ *
+ * Enumeration type containing the PLLs supported as clock sources
+ * for the controller's TX reference clock, to which pre-scalers will
+ * be applied depending on the current link speed. This is an UltraScale
+ * specific configuration item in the GEMx_REF_CTRL register of the
+ * UltraScale's CRL_APB.
+ */
 enum eth_xlnx_ref_pll
 {
 	IO_PLL       = 0,
@@ -332,6 +491,13 @@ enum eth_xlnx_ref_pll
 	D_PLL_TO_LPD = 3
 };
 
+/**
+ * @brief RX clock source configuration enumeration type.
+ *
+ * Enumeration type containing the supported clock sources for the
+ * controller's RX clock. This is an UltraScale specific configuration
+ * item in the GEM_CLK_CTRL register of the UltraScale's IOU SLCR.
+ */
 enum eth_xlnx_rx_clk_src
 {
 	/* The values of this enum are consecutively numbered */
@@ -339,6 +505,17 @@ enum eth_xlnx_rx_clk_src
 	CLK_SRC_EMIO
 };
 
+/**
+ * @brief Reference clock source configuration enumeration type.
+ *
+ * Enumeration type containing the supported clock sources for the
+ * controller's TX reference clock. This switch determines if one
+ * of the PLLs listed in the enum eth_xlnx_ref_pll will provide the
+ * TX reference clock, or if the EMIO PLL clock or the GTX clock
+ * shall provide the TX reference clock. This is an UltraScale
+ * specific configuration item in the GEM_CLK_CTRL register of the
+ * UltraScale's IOU SLCR.
+ */
 enum eth_xlnx_tx_clk_src
 {
 	/* The values of this enum are consecutively numbered */
@@ -348,18 +525,37 @@ enum eth_xlnx_tx_clk_src
 
 #endif /* CONFIG_SOC_XILINX_ZYNQ7000 / CONFIG_SOC_XILINX_ZYNQMP */
 
-/* DMA buffer descriptor
- * TODO for Cortex-A53: 64-bit addressing and timestamping support */
+/**
+ * @brief DMA memory area buffer descriptor.
+ *
+ * An array of these descriptors for each RX and TX is used to
+ * describe the respective DMA memory area. Each address word
+ * points to the start of a RX or TX buffer within the DMA memory
+ * area, while the control word is used for buffer status exchange
+ * with the controller.
+ */
 struct eth_xlnx_gem_bd
 {
-	/* Buffer physical address */
+	/* TODO for Cortex-A53: 64-bit addressing and timestamping support */
+	/* Buffer physical address (absolute address) */
 	uint32_t		addr;
-	/* Buffer control word */
+	/* Buffer control word (different contents for RX and TX) */
 	uint32_t		ctrl;
 };
 
-/* DMA buffer descriptor management structure, used for both RX and TX 
- * buffer rings */
+/**
+ * @brief DMA memory area buffer descriptor ring management structure.
+ *
+ * The DMA memory area buffer descriptor ring management structure
+ * is used to manage either the RX or TX buffer descriptor array
+ * (while the buffer descriptors are just an array from the software
+ * point of view, the controller treats them as a ring, in which the
+ * last descriptor's control word has a special last-in-ring bit set).
+ * It contains a pointer to the start of the descriptor array, a
+ * semaphore as a means of preventing concurrent access, a free entry
+ * counter as well as indices used to determine which BD shall be used
+ * or evaluated for the next RX/TX operation.
+ */
 struct eth_xlnx_gem_bdring
 {
 	/* Concurrent modification protection */
@@ -374,14 +570,28 @@ struct eth_xlnx_gem_bdring
 	uint8_t			free_bds;
 };
 
-/* Device constant configuration parameters */
+/**
+ * @brief Constant device configuration data structure.
+ *
+ * This struct contains all device configuration data for a GEM
+ * controller instance which is constant. The data herein is
+ * either acquired from the generated header file based on the
+ * data from Kconfig, or from header file based on the device tree
+ * data. Some of the data contained, in particular data relating
+ * to clock sources, is specific to either the Zynq-7000 or the
+ * UltraScale SoCs, which both contain the GEM.
+ */
 struct eth_xlnx_gem_dev_cfg {
 	uint32_t			base_addr;
 	eth_xlnx_gem_config_irq_t	config_func;
 
 	enum eth_xlnx_link_speed	max_link_speed;
 	uint8_t				init_phy;
+	uint8_t				phy_mdio_addr_fix;
 	uint8_t				phy_advertise_lower;
+	uint8_t				defer_rxp_to_thread;
+	uint8_t				defer_txd_to_thread;
+	int				aux_thread_prio;
 
 	enum eth_xlnx_amba_dbus_width	amba_dbus_width;
 	enum eth_xlnx_ahb_burst_length	ahb_burst_length;
@@ -448,7 +658,13 @@ struct eth_xlnx_gem_dev_cfg {
 	uint8_t				enable_ahb_md_endian_swap;
 };
 
-/* Device run time data */
+/**
+ * @brief Run-time device configuration data structure.
+ *
+ * This struct contains all device configuration data for a GEM
+ * controller instance which is modifyable at run-time, such as
+ * data relating to the attached PHY or the auxiliary thread.
+ */
 struct eth_xlnx_gem_dev_data {
 	struct net_if			*iface;
 	uint8_t				mac_addr[6];
@@ -457,7 +673,6 @@ struct eth_xlnx_gem_dev_data {
 
 	struct k_thread			aux_thread_data;
 	k_tid_t				aux_thread_tid;
-	int				aux_thread_prio;
 	struct k_msgq			aux_thread_msgq;
 	uint8_t __aligned(4)		aux_thread_msgq_data[10];
 
@@ -482,20 +697,6 @@ struct eth_xlnx_gem_dev_data {
 
 	uint8_t				started;
 };
-
-/* Macro for starting a GEM device's auxiliary thread */
-#define ETH_XLNX_GEM_AUX_THREAD_START(port) \
-if (dev_conf->base_addr ==  DT_REG_ADDR(DT_NODELABEL(gem##port))) { \
-	dev_data->aux_thread_tid = k_thread_create( \
-		&dev_data->aux_thread_data, \
-		eth_xlnx_gem_aux_thread_stack_gem##port, \
-		K_THREAD_STACK_SIZEOF(eth_xlnx_gem_aux_thread_stack_gem##port), \
-		eth_xlnx_gem_aux_thread, \
-		(void*)dev, (void*)iface, NULL, \
-		dev_data->aux_thread_prio, \
-		0, \
-		K_NO_WAIT); \
-}
 
 #endif /* _ZEPHYR_DRIVERS_ETHERNET_ETH_XLNX_GEM_PRIV_H_ */
 

@@ -432,17 +432,16 @@ static enum eth_xlnx_link_speed phy_xlnx_gem_marvell_alaska_poll_lspd (
 }
 
 static struct phy_xlnx_gem_api phy_xlnx_gem_marvell_alaska_api = {
-	.phy_reset_func = phy_xlnx_gem_marvell_alaska_reset,
-	.phy_configure_func = phy_xlnx_gem_marvell_alaska_cfg,
+	.phy_reset_func              = phy_xlnx_gem_marvell_alaska_reset,
+	.phy_configure_func          = phy_xlnx_gem_marvell_alaska_cfg,
 	.phy_poll_status_change_func = phy_xlnx_gem_marvell_alaska_poll_sc,
-	.phy_poll_link_status_func = phy_xlnx_gem_marvell_alaska_poll_lsts,
-	.phy_poll_link_speed_func = phy_xlnx_gem_marvell_alaska_poll_lspd
+	.phy_poll_link_status_func   = phy_xlnx_gem_marvell_alaska_poll_lsts,
+	.phy_poll_link_speed_func    = phy_xlnx_gem_marvell_alaska_poll_lspd
 };
 
 /* All vendor-specific API structs & code are located above
  * -> assemble the top-level list of supported devices the
  * upcoming function phy_xlnx_gem_detect will work with. */
-
 static struct phy_xlnx_gem_supported_dev phy_xlnx_gem_supported_devs[] = {
 	{
 		.phy_id      = 0x01410DD0, 
@@ -455,48 +454,50 @@ static struct phy_xlnx_gem_supported_dev phy_xlnx_gem_supported_devs[] = {
 /* PHY detection function. This generic function exposed to the GEM driver
  * writes the pointer to the applicable function table into the driver's
  * run-time data struct if a compatible PHY is found. */
-
 int phy_xlnx_gem_detect (struct device *dev)
 {
 	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
 
-	uint8_t  phy_addr  = 0;
+	uint8_t  phy_curr_addr  = 0;
+	uint8_t  phy_first_addr = (dev_conf->phy_mdio_addr_fix != 0)
+		? dev_conf->phy_mdio_addr_fix : 1;
+	uint8_t  phy_last_addr  = (dev_conf->phy_mdio_addr_fix != 0)
+		? dev_conf->phy_mdio_addr_fix : 32;
 	uint32_t phy_id    = 0;
 	uint16_t phy_data  = 0;
 	uint32_t list_iter = 0;
 
-	if (dev == NULL) {
-		return -EINVAL;
-	}
+	/* Clear the PHY address & ID in the device data struct -> may be
+	 * pre-initialized with a non-zero address meaning auto detection
+	 * is disabled. If eventually a supported PHY is found, a non-
+	 * zero address will be written back to the data struct. */
+	dev_data->phy_addr       = 0;
+	dev_data->phy_id         = 0;
+	dev_data->phy_access_api = NULL;
 
 	if (dev_conf->init_phy == 0) {
-		dev_data->phy_id = 0;
-		dev_data->phy_addr = 0;
-		dev_data->phy_access_api = NULL;
 		return -ENOTSUP;
 	}
 
 	/* PHY detection as described in Zynq-7000 TRM, chapter 16.3.4,
 	 * p. 517 */
-	for (phy_addr = 1; phy_addr <= 32; phy_addr++) {
+	for (phy_curr_addr = phy_first_addr; 
+		phy_curr_addr <= phy_last_addr;
+		phy_curr_addr++) {
+		/* Read the upper & lower PHY ID 16-bit words */
 		phy_data  = phy_xlnx_gem_mdio_read(
-			dev_conf->base_addr, phy_addr,
+			dev_conf->base_addr, phy_curr_addr,
 			PHY_IDENTIFIER_1_REGISTER);
 		phy_id    = (((uint32_t)phy_data << 16) & 0xFFFF0000);
 		phy_data  = phy_xlnx_gem_mdio_read(
-			dev_conf->base_addr, phy_addr,
+			dev_conf->base_addr, phy_curr_addr,
 			PHY_IDENTIFIER_2_REGISTER);
 		phy_id   |= ((uint32_t)phy_data & 0x0000FFFF);
 
 		if (phy_id != 0x00000000 && phy_id != 0xFFFFFFFF) {
 			LOG_DBG("PHY detected at address %hhu: ID 0x%08X",
-				phy_addr, phy_id);
-
-			/* Store the numeric values of the PHY ID and address
-			 * in the device's run-time data struct. */
-			dev_data->phy_addr = phy_addr;
-			dev_data->phy_id   = phy_id;
+				phy_curr_addr, phy_id);
 
 			/* Iterate the list of all supported PHYs -> if the
 			 * current PHY is supported, store all related data
@@ -511,20 +512,22 @@ int phy_xlnx_gem_detect (struct device *dev)
 					& phy_id)) {
 					LOG_DBG("Supported PHY identified: %s",
 						phy_xlnx_gem_supported_devs[list_iter].identifier);
+
+					/* Store the numeric values of the PHY ID and address
+					 * as well as the corresponding set of function pointers
+					 * in the device's run-time data struct. */
+					dev_data->phy_addr       = phy_curr_addr;
+					dev_data->phy_id         = phy_id;
 					dev_data->phy_access_api =
 						phy_xlnx_gem_supported_devs[list_iter].api;
+
 					return 0;
 				}
 			}
 		}
 	}
 
-	LOG_DBG("PHY auto-detection failed - no reply in MDIO address "
-		"range 1..32");
-
-	dev_data->phy_id = 0;
-	dev_data->phy_addr = 0;
-	dev_data->phy_access_api = NULL;
+	LOG_DBG("PHY detection failed");
 	return -EIO;
 }
 

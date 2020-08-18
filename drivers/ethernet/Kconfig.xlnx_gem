@@ -8,7 +8,9 @@
 
 menuconfig ETH_XLNX_GEM
 	bool "Xilinx GEM Ethernet driver"
-	depends on SOC_XILINX_ZYNQMP_RPU || SOC_XILINX_ZYNQMP_APU || SOC_XILINX_ZYNQ7000
+	depends on SOC_XILINX_ZYNQMP_RPU \
+	|| SOC_XILINX_ZYNQMP_APU \
+	|| SOC_XILINX_ZYNQ7000
 	help
 	  Enable Xilinx GEM Ethernet driver.
 
@@ -45,24 +47,6 @@ config ETH_XLNX_GEM_PORT_0
 	  This tells the driver to configure the GEM0 at boot, depending on
 	  the additional configuration options below.
 
-config ETH_XLNX_GEM_PORT_0_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_0
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_0_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_0
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-	
 menu "GEM0 memory configuration"
 	depends on ETH_XLNX_GEM_PORT_0
 
@@ -256,75 +240,6 @@ config ETH_XLNX_GEM_PORT_0_ENABLE_AHB_MD_ENDIAN_SWAP
 endmenu
 
 choice
-	prompt "MAC address configuration"
-	depends on ETH_XLNX_GEM_PORT_0
-	help
-	  Determines the source of the MAC address to be used by the
-	  controller.
-
-config ETH_XLNX_GEM_PORT_0_MAC_DEVTREE
-	bool "Use MAC address specified in the SOC's device tree"
-	help
-	  The controller will use the MAC address provided in the SOC's
-	  device tree.
-
-config ETH_XLNX_GEM_PORT_0_MAC_EXPLICIT
-	bool "Set MAC address explicitly"
-	help
-	  The controller will use the MAC address provided within this
-	  target configuration file.
-
-endchoice
-
-menu "Set MAC address"
-	depends on ETH_XLNX_GEM_PORT_0
-	depends on ETH_XLNX_GEM_PORT_0_MAC_EXPLICIT
-
-config ETH_XLNX_GEM_PORT_0_MAC_BYTE_5
-	hex "MAC address byte [5] (MSB)"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [5] (high byte).
-
-config ETH_XLNX_GEM_PORT_0_MAC_BYTE_4
-	hex "MAC address byte [4]"
-	range 0x00 0xFF
-	default 0x80
-	help
-	  MAC address byte [4].
-
-config ETH_XLNX_GEM_PORT_0_MAC_BYTE_3
-	hex "MAC address byte [3]"
-	range 0x00 0xFF
-	default 0x10
-	help
-	  MAC address byte [3].
-
-config ETH_XLNX_GEM_PORT_0_MAC_BYTE_2
-	hex "MAC address byte [2]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [2].
-
-config ETH_XLNX_GEM_PORT_0_MAC_BYTE_1
-	hex "MAC address byte [1]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [1].
-
-config ETH_XLNX_GEM_PORT_0_MAC_BYTE_0
-	hex "MAC address byte [0] (LSB)"
-	range 0x00 0xFF
-	default 0x01
-	help
-	  MAC address byte [0] (low byte).
-
-endmenu
-
-choice
 	prompt "Nominal / maximum link speed"
 	depends on ETH_XLNX_GEM_PORT_0
 	default ETH_XLNX_GEM_PORT_0_LINK_1GBIT
@@ -361,6 +276,17 @@ config ETH_XLNX_GEM_PORT_0_INIT_PHY
 	  by the driver. ATTENTION: At this time, only the Marvell Alaska PHY
 	  as found on the Zedboard is supported!
 
+config ETH_XLNX_GEM_PORT_0_PHY_MDIO_ADDRESS
+	depends on ETH_XLNX_GEM_PORT_0
+	depends on ETH_XLNX_GEM_PORT_0_INIT_PHY
+	int "PHY MDIO address - set to 0 for auto-detection"
+	range 0 32
+	default 0
+	help
+	  MDIO address of the PHY associated with the controller instance.
+	  If auto-detection is enabled, the first PHY to respond will be
+	  associated with the controller instance.
+
 config ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
 	depends on ETH_XLNX_GEM_PORT_0
 	depends on ETH_XLNX_GEM_PORT_0_INIT_PHY
@@ -371,6 +297,46 @@ config ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
 	  link speed set under the 'Nominal / maximum link speed' option will
 	  be advertised as well whenever the PHY auto-negotiation is triggered.
 	  Otherwise, only the selected nominal link speed will be advertised.
+
+config ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING
+	bool "Defer RX pending handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_0
+	help
+	  If this option is enabled, the RX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE
+	bool "Defer TX done handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_0
+	help
+	  If this option is enabled, the TX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_0_AUX_THREAD_PRIO
+	int "Auxiliary thread priority"
+	depends on ETH_XLNX_GEM_PORT_0 && \
+		(ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_0_INIT_PHY)
+	default 10
+	help
+	  Sets the priority of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
+
+config ETH_XLNX_GEM_PORT_0_AUX_THREAD_STACK_SIZE
+	int "Auxiliary thread stack size"
+	depends on ETH_XLNX_GEM_PORT_0 && \
+		(ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_0_INIT_PHY)
+	default 1024
+	help
+	  Sets the stack size of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_0
@@ -472,24 +438,6 @@ config ETH_XLNX_GEM_PORT_1
 	  This tells the driver to configure the GEM1 at boot, depending on
 	  the additional configuration options below.
 
-config ETH_XLNX_GEM_PORT_1_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_1
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_1_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_1
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-	
 menu "GEM1 memory configuration"
 	depends on ETH_XLNX_GEM_PORT_1
 
@@ -683,75 +631,6 @@ config ETH_XLNX_GEM_PORT_1_ENABLE_AHB_MD_ENDIAN_SWAP
 endmenu
 
 choice
-	prompt "MAC address configuration"
-	depends on ETH_XLNX_GEM_PORT_1
-	help
-	  Determines the source of the MAC address to be used by the
-	  controller.
-
-config ETH_XLNX_GEM_PORT_1_MAC_DEVTREE
-	bool "Use MAC address specified in the SOC's device tree"
-	help
-	  The controller will use the MAC address provided in the SOC's
-	  device tree.
-
-config ETH_XLNX_GEM_PORT_1_MAC_EXPLICIT
-	bool "Set MAC address explicitly"
-	help
-	  The controller will use the MAC address provided within this
-	  target configuration file.
-
-endchoice
-
-menu "Set MAC address"
-	depends on ETH_XLNX_GEM_PORT_1
-	depends on ETH_XLNX_GEM_PORT_1_MAC_EXPLICIT
-
-config ETH_XLNX_GEM_PORT_1_MAC_BYTE_5
-	hex "MAC address byte [5] (MSB)"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [5] (high byte).
-
-config ETH_XLNX_GEM_PORT_1_MAC_BYTE_4
-	hex "MAC address byte [4]"
-	range 0x00 0xFF
-	default 0x80
-	help
-	  MAC address byte [4].
-
-config ETH_XLNX_GEM_PORT_1_MAC_BYTE_3
-	hex "MAC address byte [3]"
-	range 0x00 0xFF
-	default 0x10
-	help
-	  MAC address byte [3].
-
-config ETH_XLNX_GEM_PORT_1_MAC_BYTE_2
-	hex "MAC address byte [2]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [2].
-
-config ETH_XLNX_GEM_PORT_1_MAC_BYTE_1
-	hex "MAC address byte [1]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [1].
-
-config ETH_XLNX_GEM_PORT_1_MAC_BYTE_0
-	hex "MAC address byte [0] (LSB)"
-	range 0x00 0xFF
-	default 0x02
-	help
-	  MAC address byte [0] (low byte).
-
-endmenu
-
-choice
 	prompt "Nominal / maximum link speed"
 	depends on ETH_XLNX_GEM_PORT_1
 	default ETH_XLNX_GEM_PORT_1_LINK_1GBIT
@@ -788,6 +667,17 @@ config ETH_XLNX_GEM_PORT_1_INIT_PHY
 	  by the driver. ATTENTION: At this time, only the Marvell Alaska PHY
 	  as found on the Zedboard is supported!
 
+config ETH_XLNX_GEM_PORT_1_PHY_MDIO_ADDRESS
+	depends on ETH_XLNX_GEM_PORT_1
+	depends on ETH_XLNX_GEM_PORT_1_INIT_PHY
+	int "PHY MDIO address - set to 0 for auto-detection"
+	range 0 32
+	default 0
+	help
+	  MDIO address of the PHY associated with the controller instance.
+	  If auto-detection is enabled, the first PHY to respond will be
+	  associated with the controller instance.
+
 config ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
 	depends on ETH_XLNX_GEM_PORT_1
 	depends on ETH_XLNX_GEM_PORT_1_INIT_PHY
@@ -798,6 +688,46 @@ config ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
 	  speed set under the 'Nominal / maximum link speed' option will be
 	  advertised as well whenever the PHY auto-negotiation is triggered.
 	  Otherwise, only the selected nominal link speed will be advertised.
+
+config ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING
+	bool "Defer RX pending handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_1
+	help
+	  If this option is enabled, the RX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE
+	bool "Defer TX done handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_1
+	help
+	  If this option is enabled, the TX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_1_AUX_THREAD_PRIO
+	int "Auxiliary thread priority"
+	depends on ETH_XLNX_GEM_PORT_1 && \
+		(ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_1_INIT_PHY)
+	default 10
+	help
+	  Sets the priority of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
+
+config ETH_XLNX_GEM_PORT_1_AUX_THREAD_STACK_SIZE
+	int "Auxiliary thread stack size"
+	depends on ETH_XLNX_GEM_PORT_1 && \
+		(ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_1_INIT_PHY)
+	default 1024
+	help
+	  Sets the stack size of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_1
@@ -900,24 +830,6 @@ config ETH_XLNX_GEM_PORT_2
 	  This tells the driver to configure the GEM2 at boot, depending on
 	  the additional configuration options below.
 
-config ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_2
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_2_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_2
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-	
 menu "GEM2 memory configuration"
 	depends on ETH_XLNX_GEM_PORT_2
 
@@ -1111,75 +1023,6 @@ config ETH_XLNX_GEM_PORT_2_ENABLE_AHB_MD_ENDIAN_SWAP
 endmenu
 
 choice
-	prompt "MAC address configuration"
-	depends on ETH_XLNX_GEM_PORT_2
-	help
-	  Determines the source of the MAC address to be used by the
-	  controller.
-
-config ETH_XLNX_GEM_PORT_2_MAC_DEVTREE
-	bool "Use MAC address specified in the SOC's device tree"
-	help
-	  The controller will use the MAC address provided in the SOC's
-	  device tree.
-
-config ETH_XLNX_GEM_PORT_2_MAC_EXPLICIT
-	bool "Set MAC address explicitly"
-	help
-	  The controller will use the MAC address provided within this
-	  target configuration file.
-
-endchoice
-
-menu "Set MAC address"
-	depends on ETH_XLNX_GEM_PORT_2
-	depends on ETH_XLNX_GEM_PORT_2_MAC_EXPLICIT
-
-config ETH_XLNX_GEM_PORT_2_MAC_BYTE_5
-	hex "MAC address byte [5] (MSB)"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [5] (high byte).
-
-config ETH_XLNX_GEM_PORT_2_MAC_BYTE_4
-	hex "MAC address byte [4]"
-	range 0x00 0xFF
-	default 0x80
-	help
-	  MAC address byte [4].
-
-config ETH_XLNX_GEM_PORT_2_MAC_BYTE_3
-	hex "MAC address byte [3]"
-	range 0x00 0xFF
-	default 0x10
-	help
-	  MAC address byte [3].
-
-config ETH_XLNX_GEM_PORT_2_MAC_BYTE_2
-	hex "MAC address byte [2]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [2].
-
-config ETH_XLNX_GEM_PORT_2_MAC_BYTE_1
-	hex "MAC address byte [1]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [1].
-
-config ETH_XLNX_GEM_PORT_2_MAC_BYTE_0
-	hex "MAC address byte [0] (LSB)"
-	range 0x00 0xFF
-	default 0x02
-	help
-	  MAC address byte [0] (low byte).
-
-endmenu
-
-choice
 	prompt "Nominal / maximum link speed"
 	depends on ETH_XLNX_GEM_PORT_2
 	default ETH_XLNX_GEM_PORT_2_LINK_1GBIT
@@ -1215,6 +1058,17 @@ config ETH_XLNX_GEM_PORT_2_INIT_PHY
 	  Determines if the PHY connected to the GEM shall be initialized
 	  by the driver.
 
+config ETH_XLNX_GEM_PORT_2_PHY_MDIO_ADDRESS
+	depends on ETH_XLNX_GEM_PORT_2
+	depends on ETH_XLNX_GEM_PORT_2_INIT_PHY
+	int "PHY MDIO address - set to 0 for auto-detection"
+	range 0 32
+	default 0
+	help
+	  MDIO address of the PHY associated with the controller instance.
+	  If auto-detection is enabled, the first PHY to respond will be
+	  associated with the controller instance.
+
 config ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
 	depends on ETH_XLNX_GEM_PORT_2
 	depends on ETH_XLNX_GEM_PORT_2_INIT_PHY
@@ -1225,6 +1079,46 @@ config ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
 	  speed set under the 'Nominal / maximum link speed' option will be
 	  advertised as well whenever the PHY auto-negotiation is triggered.
 	  Otherwise, only the selected nominal link speed will be advertised.
+
+config ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING
+	bool "Defer RX pending handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_2
+	help
+	  If this option is enabled, the RX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE
+	bool "Defer TX done handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_2
+	help
+	  If this option is enabled, the TX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO
+	int "Auxiliary thread priority"
+	depends on ETH_XLNX_GEM_PORT_2 && \
+		(ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_2_INIT_PHY)
+	default 10
+	help
+	  Sets the priority of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
+
+config ETH_XLNX_GEM_PORT_2_AUX_THREAD_STACK_SIZE
+	int "Auxiliary thread stack size"
+	depends on ETH_XLNX_GEM_PORT_2 && \
+		(ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_2_INIT_PHY)
+	default 1024
+	help
+	  Sets the stack size of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_2
@@ -1327,24 +1221,6 @@ config ETH_XLNX_GEM_PORT_3
 	  This tells the driver to configure the GEM3 at boot, depending on
 	  the additional configuration options below.
 
-config ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_3
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_3_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_3
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-	
 menu "GEM3 memory configuration"
 	depends on ETH_XLNX_GEM_PORT_3
 
@@ -1538,75 +1414,6 @@ config ETH_XLNX_GEM_PORT_3_ENABLE_AHB_MD_ENDIAN_SWAP
 endmenu
 
 choice
-	prompt "MAC address configuration"
-	depends on ETH_XLNX_GEM_PORT_3
-	help
-	  Determines the source of the MAC address to be used by the
-	  controller.
-
-config ETH_XLNX_GEM_PORT_3_MAC_DEVTREE
-	bool "Use MAC address specified in the SOC's device tree"
-	help
-	  The controller will use the MAC address provided in the SOC's
-	  device tree.
-
-config ETH_XLNX_GEM_PORT_3_MAC_EXPLICIT
-	bool "Set MAC address explicitly"
-	help
-	  The controller will use the MAC address provided within this
-	  target configuration file.
-
-endchoice
-
-menu "Set MAC address"
-	depends on ETH_XLNX_GEM_PORT_3
-	depends on ETH_XLNX_GEM_PORT_3_MAC_EXPLICIT
-
-config ETH_XLNX_GEM_PORT_3_MAC_BYTE_5
-	hex "MAC address byte [5] (MSB)"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [5] (high byte).
-
-config ETH_XLNX_GEM_PORT_3_MAC_BYTE_4
-	hex "MAC address byte [4]"
-	range 0x00 0xFF
-	default 0x80
-	help
-	  MAC address byte [4].
-
-config ETH_XLNX_GEM_PORT_3_MAC_BYTE_3
-	hex "MAC address byte [3]"
-	range 0x00 0xFF
-	default 0x10
-	help
-	  MAC address byte [3].
-
-config ETH_XLNX_GEM_PORT_3_MAC_BYTE_2
-	hex "MAC address byte [2]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [2].
-
-config ETH_XLNX_GEM_PORT_3_MAC_BYTE_1
-	hex "MAC address byte [1]"
-	range 0x00 0xFF
-	default 0x00
-	help
-	  MAC address byte [1].
-
-config ETH_XLNX_GEM_PORT_3_MAC_BYTE_0
-	hex "MAC address byte [0] (LSB)"
-	range 0x00 0xFF
-	default 0x02
-	help
-	  MAC address byte [0] (low byte).
-
-endmenu
-
-choice
 	prompt "Nominal / maximum link speed"
 	depends on ETH_XLNX_GEM_PORT_3
 	default ETH_XLNX_GEM_PORT_3_LINK_1GBIT
@@ -1642,6 +1449,17 @@ config ETH_XLNX_GEM_PORT_3_INIT_PHY
 	  Determines if the PHY connected to the GEM shall be initialized
 	  by the driver.
 
+config ETH_XLNX_GEM_PORT_3_PHY_MDIO_ADDRESS
+	depends on ETH_XLNX_GEM_PORT_3
+	depends on ETH_XLNX_GEM_PORT_3_INIT_PHY
+	int "PHY MDIO address - set to 0 for auto-detection"
+	range 0 32
+	default 0
+	help
+	  MDIO address of the PHY associated with the controller instance.
+	  If auto-detection is enabled, the first PHY to respond will be
+	  associated with the controller instance.
+
 config ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
 	depends on ETH_XLNX_GEM_PORT_3
 	depends on ETH_XLNX_GEM_PORT_3_INIT_PHY
@@ -1652,6 +1470,46 @@ config ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
 	  speed set under the 'Nominal / maximum link speed' option will be
 	  advertised as well whenever the PHY auto-negotiation is triggered.
 	  Otherwise, only the selected nominal link speed will be advertised.
+
+config ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING
+	bool "Defer RX pending handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_3
+	help
+	  If this option is enabled, the RX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE
+	bool "Defer TX done handling to auxiliary thread"
+	depends on ETH_XLNX_GEM_PORT_3
+	help
+	  If this option is enabled, the TX buffer handling triggered by a
+	  corresponding interrupt will not be performed within the ISR, but
+	  will be deferred to an auxiliary thread.
+
+config ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO
+	int "Auxiliary thread priority"
+	depends on ETH_XLNX_GEM_PORT_3 && \
+		(ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_3_INIT_PHY)
+	default 10
+	help
+	  Sets the priority of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
+
+config ETH_XLNX_GEM_PORT_3_AUX_THREAD_STACK_SIZE
+	int "Auxiliary thread stack size"
+	depends on ETH_XLNX_GEM_PORT_3 && \
+		(ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING \
+		|| ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE \
+		|| ETH_XLNX_GEM_PORT_3_INIT_PHY)
+	default 1024
+	help
+	  Sets the stack size of the auxiliary thread which handles the PHY's
+	  status and the deferred handling of RX/TX done indications
+	  from the ISR.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_3
