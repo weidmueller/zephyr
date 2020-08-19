@@ -55,8 +55,8 @@ static int phy_xlnx_gem_mdio_read (
 
 	sys_write32(reg_val, base_addr + ETH_XLNX_GEM_PHY_MAINTENANCE_OFFSET);
 
-	/* Wait until gem.net_status[phy_mgmt_idle] == 1 -> current command com-
-	 * pleted. TODO: This should preferrably have a time-out! */
+	/* Wait until gem.net_status[phy_mgmt_idle] == 1 -> current command
+	 * completed. TODO: This should preferrably have a time-out! */
 	do {
 		reg_val = sys_read32(base_addr + ETH_XLNX_GEM_NWSR_OFFSET);
 	} while ((reg_val & ETH_XLNX_GEM_MDIO_IDLE_BIT) == 0);

@@ -20,9 +20,7 @@
 #define ETH_XLNX_BUFFER_ALIGNMENT			4 /* RX/TX buffer alignment (in bytes) */
 
 /* Buffer descriptor (BD) related defines */
-
 /* RX BD bits & masks: comp. Zynq-7000 TRM, Table 16-2. */
-
 #define ETH_XLNX_GEM_RXBD_WRAP_BIT			0x00000002 /* Address word: Wrap bit, last BD */
 #define ETH_XLNX_GEM_RXBD_USED_BIT			0x00000001 /* Address word: BD used bit */
 #define ETH_XLNX_GEM_RXBD_BUFFER_ADDR_MASK		0xFFFFFFFC /* Address word: Mask for effective buffer address -> excludes [1..0] */
@@ -46,7 +44,6 @@
 #define ETH_XLNX_GEM_RXBD_FRAME_LENGTH_MASK		0x00001FFF /* Control word: mask for data length of received frame */
 
 /* RX BD bits & masks: comp. Zynq-7000 TRM, Table 16-3. */
-
 #define ETH_XLNX_GEM_TXBD_USED_BIT			0x80000000 /* Control word: BD used marker */
 #define ETH_XLNX_GEM_TXBD_WRAP_BIT			0x40000000 /* Control word: Wrap bit, last BD */
 #define ETH_XLNX_GEM_TXBD_RETRY_BIT			0x20000000 /* Control word: Retry limit exceeded */
@@ -59,9 +56,7 @@
 #define ETH_XLNX_GEM_TXBD_ERR_MASK			0x3C000000 /* Control word: Mask for error field */
 
 /* SLCR register space & magic words: Zynq-7000 */
-
 #ifdef CONFIG_SOC_XILINX_ZYNQ7000
-
 #define ETH_XLNX_SLCR_BASE_ADDRESS			0xF8000000
 #define ETH_XLNX_SLCR_LOCK_REGISTER			(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000004)
 #define ETH_XLNX_SLCR_UNLOCK_REGISTER			(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000008)
@@ -82,13 +77,11 @@
 #define ETH_XLNX_SLCR_LOCK_CONSTANT			0x767B
 #define ETH_XLNX_SLCR_CLK_ENABLE_BIT			0x00000001
 #define ETH_XLNX_SLCR_RCLK_ENABLE_BIT			0x00000001
-
 #endif /* CONFIG_SOC_XILINX_ZYNQ7000 */
 
 /* SLCR register space & magic words: UltraScale */
 
 #ifdef CONFIG_SOC_XILINX_ZYNQMP
-
 #define ETH_XLNX_IOU_SLCR_BASE_ADDRESS			0xFF180000
 #define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_REGISTER		(ETH_XLNX_IOU_SLCR_BASE_ADDRESS + 0x00000308)
 #define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM0	0
@@ -106,11 +99,9 @@
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR1_SHIFT	16
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR0_SHIFT	8
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_SRCSEL_MASK	0x00000007
-
 #endif /* CONFIG_SOC_XILINX_ZYNQMP */
 
 /* Register offsets within the respective GEM's address space */
-
 #define ETH_XLNX_GEM_NWCTRL_OFFSET			0x00000000 /* gem.net_ctrl       Network Control           register */
 #define ETH_XLNX_GEM_NWCFG_OFFSET			0x00000004 /* gem.net_cfg        Network Configuration     register */
 #define ETH_XLNX_GEM_NWSR_OFFSET			0x00000008 /* gem.net_status     Network Status            register */
@@ -134,14 +125,12 @@
 #define ETH_XLNX_GEM_LADDR4H_OFFSET			0x000000A4 /* gem.spec_addr4_top Specific address 4 top    register */
 
 /* Masks for clearing registers during initialization */
-
 #define ETH_XLNX_GEM_STATCLR_MASK			0x00000020 /* gem.net_ctrl  [clear_stat_regs] */
 #define ETH_XLNX_GEM_TXSRCLR_MASK			0x000000FF /* gem.tx_status [7..0]            */
 #define ETH_XLNX_GEM_RXSRCLR_MASK			0x0000000F /* gem.tx_status [3..0]            */
 #define ETH_XLNX_GEM_IDRCLR_MASK			0x07FFFFFF /* gem.intr_dis  [26..0]           */
 
 /* (Shift) masks for individual registers' fields */
-
 #define ETH_XLNX_GEM_NWCTRL_RXTSTAMP_BIT		0x00008000 /* gem.net_ctrl: RX Timestamp in CRC */
 #define ETH_XLNX_GEM_NWCTRL_ZEROPAUSETX_BIT		0x00001000 /* gem.net_ctrl: Transmit zero quantum pause frame */
 #define ETH_XLNX_GEM_NWCTRL_PAUSETX_BIT			0x00000800 /* gem.net_ctrl: Transmit pause frame */
@@ -224,7 +213,6 @@
 #define ETH_XLNX_GEM_IXR_ALL_MASK			0x03FC7FFE /* gem.intr_*: Bit mask for all handled interrupt sources */
 
 /* Bits / bit masks relating to the GEM's MDIO interface */
-
 #define ETH_XLNX_GEM_MDIO_IDLE_BIT			0x00000004 /* gem.net_status: PHY management idle bit */
 #define ETH_XLNX_GEM_MDIO_IN_STATUS_BIT			0x00000002 /* gem.net_status: MDIO input status */
 
@@ -238,12 +226,10 @@
 #define ETH_XLNX_GEM_PHY_MAINT_DATA_MASK		0x0000FFFF /* gem.phy_maint: 16-bit data word */
 
 /* AMBA clock configuration related defines */
-
 #define ETH_XLNX_GEM_AMBA_CLK_ENABLE_BIT_GEM0		(1 << 6)
 #define ETH_XLNX_GEM_AMBA_CLK_ENABLE_BIT_GEM1		(1 << 7)
 
 /* Auxiliary thread trigger bits */
-
 #define ETH_XLNX_GEM_AUX_THREAD_RXDONE_BIT		(1 << 0)
 #define ETH_XLNX_GEM_AUX_THREAD_TXDONE_BIT		(1 << 1)
 #define ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT		(1 << 7)
@@ -335,7 +321,8 @@ if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem##port)) {\
 	dev_data->aux_thread_tid = k_thread_create( \
 		&dev_data->aux_thread_data, \
 		eth_xlnx_gem_aux_thread_stack_gem##port, \
-		K_THREAD_STACK_SIZEOF(eth_xlnx_gem_aux_thread_stack_gem##port), \
+		K_THREAD_STACK_SIZEOF( \
+			eth_xlnx_gem_aux_thread_stack_gem##port), \
 		eth_xlnx_gem_aux_thread, \
 		(void*)dev, (void*)iface, NULL, \
 		dev_conf->aux_thread_prio, \
@@ -442,7 +429,6 @@ enum eth_xlnx_ahb_burst_length
 };
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-
 /**
  * @brief Reference clock source configuration enumeration type.
  *
@@ -472,9 +458,7 @@ enum eth_xlnx_clk_src
 	CLK_SRC_MIO = 0,
 	CLK_SRC_EMIO
 };
-
 #elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-
 /**
  * @brief Reference clock PLL configuration enumeration type.
  *
@@ -522,7 +506,6 @@ enum eth_xlnx_tx_clk_src
 	CLK_SRC_PLL_REF = 0,
 	CLK_SRC_EMIO_PLL_GTX
 };
-
 #endif /* CONFIG_SOC_XILINX_ZYNQ7000 / CONFIG_SOC_XILINX_ZYNQMP */
 
 /**
