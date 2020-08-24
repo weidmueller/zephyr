@@ -276,6 +276,15 @@ config ETH_XLNX_GEM_PORT_0_INIT_PHY
 	  by the driver. ATTENTION: At this time, only the Marvell Alaska PHY
 	  as found on the Zedboard is supported!
 
+config ETH_XLNX_GEM_PORT_0_PHY_POLL_INTERVAL
+	depends on ETH_XLNX_GEM_PORT_0
+	depends on ETH_XLNX_GEM_PORT_0_INIT_PHY
+	int "PHY status polling interval (in milliseconds)"
+	range 10 10000
+	default 1000
+	help
+	  PHY status polling interval.
+
 config ETH_XLNX_GEM_PORT_0_PHY_MDIO_ADDRESS
 	depends on ETH_XLNX_GEM_PORT_0
 	depends on ETH_XLNX_GEM_PORT_0_INIT_PHY
@@ -293,50 +302,26 @@ config ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
 	bool "Advertise lower link speeds during PHY auto-negotiation"
 	default y
 	help
-	  If this option is selected, lower link speeds than the nominal 
-	  link speed set under the 'Nominal / maximum link speed' option will
-	  be advertised as well whenever the PHY auto-negotiation is triggered.
+	  If this option is selected, lower link speeds than the nominal link
+	  speed set under the 'Nominal / maximum link speed' option will be
+	  advertised as well whenever the PHY auto-negotiation is triggered.
 	  Otherwise, only the selected nominal link speed will be advertised.
 
 config ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING
-	bool "Defer RX pending handling to auxiliary thread"
+	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_0
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
+	  will be deferred to the system work queue instead.
 
 config ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE
-	bool "Defer TX done handling to auxiliary thread"
+	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_0
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
-
-config ETH_XLNX_GEM_PORT_0_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_0 && \
-		(ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_0_INIT_PHY)
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_0_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_0 && \
-		(ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_0_INIT_PHY)
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
+	  will be deferred to the system work queue instead.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_0
@@ -667,6 +652,15 @@ config ETH_XLNX_GEM_PORT_1_INIT_PHY
 	  by the driver. ATTENTION: At this time, only the Marvell Alaska PHY
 	  as found on the Zedboard is supported!
 
+config ETH_XLNX_GEM_PORT_1_PHY_POLL_INTERVAL
+	depends on ETH_XLNX_GEM_PORT_1
+	depends on ETH_XLNX_GEM_PORT_1_INIT_PHY
+	int "PHY status polling interval (in milliseconds)"
+	range 10 10000
+	default 1000
+	help
+	  PHY status polling interval.
+
 config ETH_XLNX_GEM_PORT_1_PHY_MDIO_ADDRESS
 	depends on ETH_XLNX_GEM_PORT_1
 	depends on ETH_XLNX_GEM_PORT_1_INIT_PHY
@@ -690,44 +684,20 @@ config ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
 	  Otherwise, only the selected nominal link speed will be advertised.
 
 config ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING
-	bool "Defer RX pending handling to auxiliary thread"
+	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_1
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
+	  will be deferred to the system work queue instead.
 
 config ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE
-	bool "Defer TX done handling to auxiliary thread"
+	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_1
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
-
-config ETH_XLNX_GEM_PORT_1_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_1 && \
-		(ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_1_INIT_PHY)
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_1_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_1 && \
-		(ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_1_INIT_PHY)
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
+	  will be deferred to the system work queue instead.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_1
@@ -1058,6 +1028,15 @@ config ETH_XLNX_GEM_PORT_2_INIT_PHY
 	  Determines if the PHY connected to the GEM shall be initialized
 	  by the driver.
 
+config ETH_XLNX_GEM_PORT_2_PHY_POLL_INTERVAL
+	depends on ETH_XLNX_GEM_PORT_2
+	depends on ETH_XLNX_GEM_PORT_2_INIT_PHY
+	int "PHY status polling interval (in milliseconds)"
+	range 10 10000
+	default 1000
+	help
+	  PHY status polling interval.
+
 config ETH_XLNX_GEM_PORT_2_PHY_MDIO_ADDRESS
 	depends on ETH_XLNX_GEM_PORT_2
 	depends on ETH_XLNX_GEM_PORT_2_INIT_PHY
@@ -1081,44 +1060,20 @@ config ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
 	  Otherwise, only the selected nominal link speed will be advertised.
 
 config ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING
-	bool "Defer RX pending handling to auxiliary thread"
+	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_2
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
+	  will be deferred to the system work queue instead.
 
 config ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE
-	bool "Defer TX done handling to auxiliary thread"
+	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_2
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
-
-config ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_2 && \
-		(ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_2_INIT_PHY)
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_2_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_2 && \
-		(ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_2_INIT_PHY)
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
+	  will be deferred to the system work queue instead.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_2
@@ -1449,6 +1404,15 @@ config ETH_XLNX_GEM_PORT_3_INIT_PHY
 	  Determines if the PHY connected to the GEM shall be initialized
 	  by the driver.
 
+config ETH_XLNX_GEM_PORT_3_PHY_POLL_INTERVAL
+	depends on ETH_XLNX_GEM_PORT_3
+	depends on ETH_XLNX_GEM_PORT_3_INIT_PHY
+	int "PHY status polling interval (in milliseconds)"
+	range 10 10000
+	default 1000
+	help
+	  PHY status polling interval.
+
 config ETH_XLNX_GEM_PORT_3_PHY_MDIO_ADDRESS
 	depends on ETH_XLNX_GEM_PORT_3
 	depends on ETH_XLNX_GEM_PORT_3_INIT_PHY
@@ -1472,44 +1436,20 @@ config ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
 	  Otherwise, only the selected nominal link speed will be advertised.
 
 config ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING
-	bool "Defer RX pending handling to auxiliary thread"
+	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_3
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
+	  will be deferred to the system work queue instead.
 
 config ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE
-	bool "Defer TX done handling to auxiliary thread"
+	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_3
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
-	  will be deferred to an auxiliary thread.
-
-config ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO
-	int "Auxiliary thread priority"
-	depends on ETH_XLNX_GEM_PORT_3 && \
-		(ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_3_INIT_PHY)
-	default 10
-	help
-	  Sets the priority of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
-
-config ETH_XLNX_GEM_PORT_3_AUX_THREAD_STACK_SIZE
-	int "Auxiliary thread stack size"
-	depends on ETH_XLNX_GEM_PORT_3 && \
-		(ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING \
-		|| ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE \
-		|| ETH_XLNX_GEM_PORT_3_INIT_PHY)
-	default 1024
-	help
-	  Sets the stack size of the auxiliary thread which handles the PHY's
-	  status and the deferred handling of RX/TX done indications
-	  from the ISR.
+	  will be deferred to the system work queue instead.
 
 menu "Select controller feature flags"
 	depends on ETH_XLNX_GEM_PORT_3

@@ -286,50 +286,6 @@
 	activated in Kconfig!
 #endif
 
-/* Macros determining if each driver instance uses the auxiliary thread */
-#if (defined(CONFIG_ETH_XLNX_GEM_PORT_0) && \
-	(defined(CONFIG_ETH_XLNX_GEM_PORT_0_INIT_PHY) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE)))
-#define ETH_XLNX_GEM_PORT_0_USES_THREAD
-#endif
-
-#if (defined(CONFIG_ETH_XLNX_GEM_PORT_1) && \
-	(defined(CONFIG_ETH_XLNX_GEM_PORT_1_INIT_PHY) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE)))
-#define ETH_XLNX_GEM_PORT_1_USES_THREAD
-#endif
-
-#if (defined(CONFIG_ETH_XLNX_GEM_PORT_2) && \
-	(defined(CONFIG_ETH_XLNX_GEM_PORT_2_INIT_PHY) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE)))
-#define ETH_XLNX_GEM_PORT_2_USES_THREAD
-#endif
-
-#if (defined(CONFIG_ETH_XLNX_GEM_PORT_3) && \
-	(defined(CONFIG_ETH_XLNX_GEM_PORT_3_INIT_PHY) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING) \
-	|| defined(CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE)))
-#define ETH_XLNX_GEM_PORT_3_USES_THREAD
-#endif
-
-/* Macro for starting a GEM device's auxiliary thread */
-#define ETH_XLNX_GEM_AUX_THREAD_START(port) \
-if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem##port)) {\
-	dev_data->aux_thread_tid = k_thread_create( \
-		&dev_data->aux_thread_data, \
-		eth_xlnx_gem_aux_thread_stack_gem##port, \
-		K_THREAD_STACK_SIZEOF( \
-			eth_xlnx_gem_aux_thread_stack_gem##port), \
-		eth_xlnx_gem_aux_thread, \
-		(void*)dev, (void*)iface, NULL, \
-		dev_conf->aux_thread_prio, \
-		0, \
-		K_NO_WAIT); \
-}
-
 /* Macro for attaching to a GEM device's IRQ */
 #define ETH_XLNX_GEM_CONFIG_IRQ(port) \
 if (dev_conf->base_addr == DT_REG_ADDR(DT_NODELABEL(gem##port))) { \
@@ -572,9 +528,9 @@ struct eth_xlnx_gem_dev_cfg {
 	uint8_t				init_phy;
 	uint8_t				phy_mdio_addr_fix;
 	uint8_t				phy_advertise_lower;
-	uint8_t				defer_rxp_to_thread;
-	uint8_t				defer_txd_to_thread;
-	int				aux_thread_prio;
+	uint32_t			phy_poll_interval;
+	uint8_t				defer_rxp_to_queue;
+	uint8_t				defer_txd_to_queue;
 
 	enum eth_xlnx_amba_dbus_width	amba_dbus_width;
 	enum eth_xlnx_ahb_burst_length	ahb_burst_length;
@@ -651,19 +607,15 @@ struct eth_xlnx_gem_dev_cfg {
 struct eth_xlnx_gem_dev_data {
 	struct net_if			*iface;
 	uint8_t				mac_addr[6];
-
-	struct k_sem			tx_done_sem;
-
-	struct k_thread			aux_thread_data;
-	k_tid_t				aux_thread_tid;
-	struct k_msgq			aux_thread_msgq;
-	uint8_t __aligned(4)		aux_thread_msgq_data[10];
-
 	enum eth_xlnx_link_speed	eff_link_speed;
+
+	struct k_work			tx_done_work;
+	struct k_work			rx_pend_work;
+	struct k_sem			tx_done_sem;
 
 	uint8_t				phy_addr;
 	uint32_t			phy_id;
-	struct k_timer			phy_poll_timer;
+	struct k_delayed_work		phy_poll_delayed_work;
 	struct phy_xlnx_gem_api		*phy_access_api;
 
 	enum eth_xlnx_mdc_clock_divisor	mdc_divisor;

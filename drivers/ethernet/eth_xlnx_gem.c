@@ -44,13 +44,12 @@ static void eth_xlnx_gem_set_initial_nwcfg(struct device *dev);
 static void eth_xlnx_gem_set_mac_address(struct device *dev);
 static void eth_xlnx_gem_set_initial_dmacr(struct device *dev);
 static void eth_xlnx_gem_init_phy(struct device *dev);
-static void eth_xlnx_gem_poll_phy(struct device *dev, struct net_if *iface);
+static void eth_xlnx_gem_poll_phy(struct k_work *item);
 static void eth_xlnx_gem_configure_buffers(struct device *dev);
+static void eth_xlnx_gem_rx_pending_work(struct k_work *item);
 static void eth_xlnx_gem_handle_rx_pending(struct device *dev);
+static void eth_xlnx_gem_tx_done_work(struct k_work *item);
 static void eth_xlnx_gem_handle_tx_done(struct device *dev);
-
-static void eth_xlnx_gem_aux_timer (struct k_timer *timer_id);
-static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3);
 
 /* GEM Driver API declaration, required by the upcoming instances of
  * the ETH_NET_DEVICE_INIT macro for each activated device instance */
@@ -117,22 +116,22 @@ static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem0_dev_cfg = {
 #else
 	.phy_advertise_lower = 0,
 #endif
+	/* PHY status polling interval */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_0_PHY_POLL_INTERVAL
+	.phy_poll_interval   = CONFIG_ETH_XLNX_GEM_PORT_0_PHY_POLL_INTERVAL,
+#else
+	.phy_poll_interval   = 0,
+#endif
 	/* Deferred processing settings */
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING
-	.defer_rxp_to_thread = 1,
+	.defer_rxp_to_queue = 1,
 #else
-	.defer_rxp_to_thread = 0,
+	.defer_rxp_to_queue = 0,
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE
-	.defer_txd_to_thread = 1,
+	.defer_txd_to_queue = 1,
 #else
-	.defer_txd_to_thread = 0,
-#endif
-	/* Auxiliary thread priority (if applicable) */
-#ifdef ETH_XLNX_GEM_PORT_0_USES_THREAD
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_0_AUX_THREAD_PRIO,
-#else
-	.aux_thread_prio = 0,
+	.defer_txd_to_queue = 0,
 #endif
 	/* AMBA AHB data bus width setting */
 #if defined(CONFIG_ETH_XLNX_GEM_PORT_0_AMBAAHB_32BIT)
@@ -432,12 +431,6 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem0_dev_data = {
 static struct eth_xlnx_dma_area_gem0 dma_area_gem0;
 #endif
 
-/* GEM0 driver auxiliary thread stack declaration */
-#ifdef ETH_XLNX_GEM_PORT_0_USES_THREAD
-K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem0,
-	CONFIG_ETH_XLNX_GEM_PORT_0_AUX_THREAD_STACK_SIZE);
-#endif
-
 /* GEM0 driver instance declaration */
 ETH_NET_DEVICE_INIT(eth_xlnx_gem0, DT_LABEL(DT_NODELABEL(gem0)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
@@ -499,22 +492,22 @@ static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem1_dev_cfg = {
 #else
 	.phy_advertise_lower = 0,
 #endif
+	/* PHY status polling interval */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_1_PHY_POLL_INTERVAL
+	.phy_poll_interval   = CONFIG_ETH_XLNX_GEM_PORT_1_PHY_POLL_INTERVAL,
+#else
+	.phy_poll_interval   = 0,
+#endif
 	/* Deferred processing settings */
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING
-	.defer_rxp_to_thread = 1,
+	.defer_rxp_to_queue = 1,
 #else
-	.defer_rxp_to_thread = 0,
+	.defer_rxp_to_queue = 0,
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE
-	.defer_txd_to_thread = 1,
+	.defer_txd_to_queue = 1,
 #else
-	.defer_txd_to_thread = 0,
-#endif
-	/* Auxiliary thread priority (if applicable) */
-#ifdef ETH_XLNX_GEM_PORT_1_USES_THREAD
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_1_AUX_THREAD_PRIO,
-#else
-	.aux_thread_prio = 0,
+	.defer_txd_to_queue = 0,
 #endif
 	/* AMBA AHB data bus width setting */
 #if defined(CONFIG_ETH_XLNX_GEM_PORT_1_AMBAAHB_32BIT)
@@ -807,12 +800,6 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem1_dev_data = {
 static struct eth_xlnx_dma_area_gem1 dma_area_gem1;
 #endif
 
-/* GEM1 driver auxiliary thread stack declaration */
-#ifdef ETH_XLNX_GEM_PORT_1_USES_THREAD
-K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem1,
-	CONFIG_ETH_XLNX_GEM_PORT_1_AUX_THREAD_STACK_SIZE);
-#endif
-
 /* GEM1 driver instance declaration */
 ETH_NET_DEVICE_INIT(eth_xlnx_gem1, DT_LABEL(DT_NODELABEL(gem1)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
@@ -879,22 +866,22 @@ static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem2_dev_cfg = {
 #else
 	.phy_advertise_lower = 0,
 #endif
+	/* PHY status polling interval */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_PHY_POLL_INTERVAL
+	.phy_poll_interval   = CONFIG_ETH_XLNX_GEM_PORT_2_PHY_POLL_INTERVAL,
+#else
+	.phy_poll_interval   = 0,
+#endif
 	/* Deferred processing settings */
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING
-	.defer_rxp_to_thread = 1,
+	.defer_rxp_to_queue = 1,
 #else
-	.defer_rxp_to_thread = 0,
+	.defer_rxp_to_queue = 0,
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE
-	.defer_txd_to_thread = 1,
+	.defer_txd_to_queue = 1,
 #else
-	.defer_txd_to_thread = 0,
-#endif
-	/* Auxiliary thread priority (if applicable) */
-#ifdef CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_PRIO,
-#else
-	.aux_thread_prio = 0,
+	.defer_txd_to_queue = 0,
 #endif
 	/* AMBA AHB data bus width setting */
 #if defined(CONFIG_ETH_XLNX_GEM_PORT_2_AMBAAHB_32BIT)
@@ -1149,12 +1136,6 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem2_dev_data = {
 static struct eth_xlnx_dma_area_gem2 dma_area_gem2;
 #endif
 
-/* GEM2 driver auxiliary thread stack declaration */
-#ifdef ETH_XLNX_GEM_PORT_2_USES_THREAD
-K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem2,
-	CONFIG_ETH_XLNX_GEM_PORT_2_AUX_THREAD_STACK_SIZE);
-#endif
-
 /* GEM2 driver instance declaration */
 ETH_NET_DEVICE_INIT(eth_xlnx_gem2, DT_LABEL(DT_NODELABEL(gem2)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
@@ -1221,22 +1202,22 @@ static struct eth_xlnx_gem_dev_cfg eth_xlnx_gem3_dev_cfg = {
 #else
 	.phy_advertise_lower = 0,
 #endif
+	/* PHY status polling interval */
+#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_PHY_POLL_INTERVAL
+	.phy_poll_interval   = CONFIG_ETH_XLNX_GEM_PORT_3_PHY_POLL_INTERVAL,
+#else
+	.phy_poll_interval   = 0,
+#endif
 	/* Deferred processing settings */
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING
-	.defer_rxp_to_thread = 1,
+	.defer_rxp_to_queue = 1,
 #else
-	.defer_rxp_to_thread = 0,
+	.defer_rxp_to_queue = 0,
 #endif
 #ifdef CONFIG_ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE
-	.defer_txd_to_thread = 1,
+	.defer_txd_to_queue = 1,
 #else
-	.defer_txd_to_thread = 0,
-#endif
-	/* Auxiliary thread priority (if applicable) */
-#ifdef CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO
-	.aux_thread_prio = CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_PRIO,
-#else
-	.aux_thread_prio = 0,
+	.defer_txd_to_queue = 0,
 #endif
 	/* AMBA AHB data bus width setting */
 #if defined(CONFIG_ETH_XLNX_GEM_PORT_3_AMBAAHB_32BIT)
@@ -1491,12 +1472,6 @@ static struct eth_xlnx_gem_dev_data eth_xlnx_gem3_dev_data = {
 static struct eth_xlnx_dma_area_gem3 dma_area_gem3;
 #endif
 
-/* GEM3 driver auxiliary thread stack declaration */
-#ifdef ETH_XLNX_GEM_PORT_3_USES_THREAD
-K_THREAD_STACK_DEFINE(eth_xlnx_gem_aux_thread_stack_gem3,
-	CONFIG_ETH_XLNX_GEM_PORT_3_AUX_THREAD_STACK_SIZE);
-#endif
-
 /* GEM3 driver instance declaration */
 ETH_NET_DEVICE_INIT(eth_xlnx_gem3, DT_LABEL(DT_NODELABEL(gem3)),
 	eth_xlnx_gem_dev_init, device_pm_control_nop,
@@ -1551,18 +1526,42 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 	net_if_set_link_addr(iface, dev_data->mac_addr, 6, NET_LINK_ETHERNET);
 	ethernet_init(iface);
 
+	/* Initialize the (delayed) work structures for RX pending, TX done
+	 * and PHY status polling handlers */
+	k_work_init(&dev_data->tx_done_work, eth_xlnx_gem_tx_done_work);
+	k_work_init(&dev_data->rx_pend_work, eth_xlnx_gem_rx_pending_work);
+	k_delayed_work_init(&dev_data->phy_poll_delayed_work,
+		eth_xlnx_gem_poll_phy);
+
+	/* Initialize TX completion semaphore */
+	k_sem_init(&dev_data->tx_done_sem, 0, 1);
+
+	/* Initialize semaphores in the RX/TX BD ring values which have not
+	 * yet been initialized */
+	k_sem_init(&dev_data->rxbd_ring.ring_sem, 1, 1);
+	k_sem_init(&dev_data->txbd_ring.ring_sem, 1, 1);
+
+	/* Initialize interrupts */
+	dev_conf->config_func(dev);
+
 	/* Initially declare the link down if PHY initialization by the driver
 	 * is active. In that case, the auto-negotiation will be started from
 	 * within eth_xlnx_gem_init_phy(), but the completion of the operation
 	 * is not polled at that point as this will block the completion of the
-	 * boot sequence if the link is actually down by that time. Once the
-	 * periodic link monitoring from within the current driver instance's
-	 * auxiliary thread detects a link, the updated carrier status will
-	 * be propagated. If the current driver instance doesn't manage an
-	 * associated PHY, or if no compatible PHY could be found, declare the
-	 * link up at the nominal link speed. */
+	 * boot sequence if the link is actually down by that time. In order to
+	 * pick up the result of the auto-negotiation, the PHY polling delayed
+	 * work is queued for the first time. Once the periodic status moni-
+	 * toring from within the work queue thread detects a link, the updated
+	 * carrier status will be propagated. If the current driver instance
+	 * doesn't manage an associated PHY, or if no compatible PHY could be
+	 * found, set the effective link speed to be the nominal link speed.
+	 * net_eth_carrier_on may not be called from within this context ->
+	 * possible race condition. Declaring the link up or down in this sce-
+	 * nario has been deferred to the start/stop functions. */
 	if (dev_conf->init_phy == 1 && dev_data->phy_access_api != NULL) {
 		net_eth_carrier_off(iface);
+		k_delayed_work_submit(&dev_data->phy_poll_delayed_work,
+			K_MSEC(dev_conf->phy_poll_interval));
 	} else {
 		dev_data->eff_link_speed = dev_conf->max_link_speed;
 		LOG_DBG("GEM@0x%08X PHY not managed by the driver or no "
@@ -1576,60 +1575,6 @@ static void eth_xlnx_gem_iface_init (struct net_if *iface)
 			? "10 MBit/s"
 			: "undefined");
 	}
-
-	/* Initialize TX completion semaphore */
-	k_sem_init(&dev_data->tx_done_sem, 0, 1);
-
-	/* Initialize semaphores in the RX/TX BD ring values which have not
-	 * yet been initialized */
-	k_sem_init(&dev_data->rxbd_ring.ring_sem, 1, 1);
-	k_sem_init(&dev_data->txbd_ring.ring_sem, 1, 1);
-
-	/* Initialize the message queue for the auxiliary thread (if appli-
-	 * cable) */
-	if (dev_conf->init_phy == 1
-		|| dev_conf->defer_rxp_to_thread == 1
-		|| dev_conf->defer_txd_to_thread == 1) {
-		k_msgq_init(
-			&dev_data->aux_thread_msgq,
-			dev_data->aux_thread_msgq_data,
-			sizeof(uint8_t),
-			10);
-	}
-
-	/* Initialize the timer for the auxiliary thread if the PHY of the
-	 * respective GEM is managed by the corresponding driver's instance
-	 * and a compatible PHY was detected */
-	if (dev_conf->init_phy == 1 && dev_data->phy_access_api != NULL) {
-		k_timer_init(
-			&dev_data->phy_poll_timer,
-			eth_xlnx_gem_aux_timer,
-			NULL);
-		dev_data->phy_poll_timer.user_data = (void*)iface;
-	}
-
-	/* Initialize & start the auxiliary thread for each device */
-	#ifdef ETH_XLNX_GEM_PORT_0_USES_THREAD
-	ETH_XLNX_GEM_AUX_THREAD_START(0);
-	#endif
-	#ifdef ETH_XLNX_GEM_PORT_1_USES_THREAD
-	ETH_XLNX_GEM_AUX_THREAD_START(1);
-	#endif
-	#ifdef ETH_XLNX_GEM_PORT_2_USES_THREAD
-	ETH_XLNX_GEM_AUX_THREAD_START(2);
-	#endif
-	#ifdef ETH_XLNX_GEM_PORT_3_USES_THREAD
-	ETH_XLNX_GEM_AUX_THREAD_START(3);
-	#endif
-
-	/* Start the PHY polling timer (if applicable, see above) */
-	if (dev_conf->init_phy == 1 && dev_data->phy_access_api != NULL) {
-		k_timer_start(&dev_data->phy_poll_timer,
-			K_SECONDS(1), K_SECONDS(1));
-	}
-
-	/* Initialize interrupts */
-	dev_conf->config_func(dev);
 }
 
 static void eth_xlnx_gem_irq_config (struct device *dev)
@@ -1658,8 +1603,6 @@ static void eth_xlnx_gem_isr (void *arg)
 	struct eth_xlnx_gem_dev_cfg *dev_conf = DEV_CFG(dev);
 	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
 	uint32_t reg_val_isr = 0;
-	uint8_t aux_thread_notify = 0x00;
-	int msgq_rc = 0;
 
 	/* Read the interrupt status register */
 	reg_val_isr = sys_read32(dev_conf->base_addr
@@ -1678,31 +1621,20 @@ static void eth_xlnx_gem_isr (void *arg)
 	 * reg_val & 0x00000002 -> gem.intr_status bit [1] = Frame received
 	 * comp. Zynq-7000 TRM, Chapter B.18, p. 1289/1290.
 	 * If the respective condition's handling is configured to be deferred
-	 * to the auxiliary thread, notify the thread via its message queue,
-	 * otherwise, handle the condition immediately within this ISR. */
+	 * to the work queue thread, submit the corresponding job to the work
+	 * queue, otherwise, handle the condition immediately. */
 	if ((reg_val_isr & ETH_XLNX_GEM_IXR_TXCOMPL_BIT) != 0) {
-		if (dev_conf->defer_txd_to_thread == 1) {
-			aux_thread_notify |= ETH_XLNX_GEM_AUX_THREAD_TXDONE_BIT;
+		if (dev_conf->defer_txd_to_queue == 1) {
+			k_work_submit(&dev_data->tx_done_work);
 		} else {
 			eth_xlnx_gem_handle_tx_done(dev);
 		}
 	}
 	if ((reg_val_isr & ETH_XLNX_GEM_IXR_FRAMERX_BIT) != 0) {
-		if (dev_conf->defer_rxp_to_thread == 1) {
-			aux_thread_notify |= ETH_XLNX_GEM_AUX_THREAD_RXDONE_BIT;
+		if (dev_conf->defer_rxp_to_queue == 1) {
+			k_work_submit(&dev_data->rx_pend_work);
 		} else {
 			eth_xlnx_gem_handle_rx_pending(dev);
-		}
-	}
-
-	if (aux_thread_notify != 0x00) {
-		msgq_rc = k_msgq_put(&dev_data->aux_thread_msgq,
-			&aux_thread_notify, K_NO_WAIT);
-		if (msgq_rc < 0) {
-			LOG_ERR("GEM@0x%08X auxiliary thread notification for "
-				"RX/TX handling failed: k_msgq_put returns %d",
-				dev_conf->base_addr,
-				msgq_rc);
 		}
 	}
 
@@ -2538,13 +2470,15 @@ static void eth_xlnx_gem_init_phy (struct device *dev)
 	}
 }
 
-static void eth_xlnx_gem_poll_phy(struct device *dev, struct net_if *iface)
+static void eth_xlnx_gem_poll_phy(struct k_work *item)
 {
-	struct eth_xlnx_gem_dev_cfg  *dev_conf   = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data   = DEV_DATA(dev);
-	uint16_t                     phy_status  = 0x0000;
-	uint8_t                      link_status = 0x00;
-	uint8_t                      started_pre = 0;
+	struct eth_xlnx_gem_dev_data *dev_data = CONTAINER_OF(item,
+		struct eth_xlnx_gem_dev_data, phy_poll_delayed_work);
+	struct device *dev = net_if_get_device(dev_data->iface);
+	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
+	uint16_t phy_status  = 0x0000;
+	uint8_t  link_status = 0x00;
+	uint8_t  started_pre = 0;
 
 	if (dev_data->phy_access_api != NULL) {
 		phy_status = dev_data->phy_access_api->
@@ -2569,7 +2503,7 @@ static void eth_xlnx_gem_poll_phy(struct device *dev, struct net_if *iface)
 					dev_data->started = 0;
 				}
 
-				net_eth_carrier_off(iface);
+				net_eth_carrier_off(dev_data->iface);
 				dev_data->eff_link_speed = LINK_DOWN;
 
 				LOG_DBG("GEM@0x%08X link down",
@@ -2597,7 +2531,7 @@ static void eth_xlnx_gem_poll_phy(struct device *dev, struct net_if *iface)
 
 				eth_xlnx_gem_configure_clocks(dev);
 				eth_xlnx_gem_configure_buffers(dev);
-				net_eth_carrier_on(iface);
+				net_eth_carrier_on(dev_data->iface);
 
 				if (started_pre == 1) {
 					eth_xlnx_gem_start_device(dev);
@@ -2615,6 +2549,9 @@ static void eth_xlnx_gem_poll_phy(struct device *dev, struct net_if *iface)
 			}
 		}
 	}
+
+	k_delayed_work_submit(&dev_data->phy_poll_delayed_work,
+		K_MSEC(dev_conf->phy_poll_interval));
 }
 
 static void eth_xlnx_gem_configure_buffers (struct device *dev)
@@ -2772,6 +2709,15 @@ static void eth_xlnx_gem_configure_buffers (struct device *dev)
 		dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
 	sys_write32((uint32_t)dev_data->txbd_ring.first_bd,
 		dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
+}
+
+static void eth_xlnx_gem_rx_pending_work(struct k_work *item)
+{
+	struct eth_xlnx_gem_dev_data *dev_data = CONTAINER_OF(item,
+		struct eth_xlnx_gem_dev_data, rx_pend_work);
+	struct device *dev = net_if_get_device(dev_data->iface);
+	
+	eth_xlnx_gem_handle_rx_pending(dev);
 }
 
 static void eth_xlnx_gem_handle_rx_pending(struct device *dev)
@@ -2960,6 +2906,15 @@ static void eth_xlnx_gem_handle_rx_pending(struct device *dev)
 	}
 }
 
+static void eth_xlnx_gem_tx_done_work(struct k_work *item)
+{
+	struct eth_xlnx_gem_dev_data *dev_data = CONTAINER_OF(item,
+		struct eth_xlnx_gem_dev_data, tx_done_work);
+	struct device *dev = net_if_get_device(dev_data->iface);
+	
+	eth_xlnx_gem_handle_tx_done(dev);
+}
+
 static void eth_xlnx_gem_handle_tx_done(struct device *dev)
 {
 	struct eth_xlnx_gem_dev_cfg	*dev_conf     = DEV_CFG(dev);
@@ -3020,59 +2975,6 @@ static void eth_xlnx_gem_handle_tx_done(struct device *dev)
 	/* Indicate completion to a blocking eth_xlnx_gem_send() call */
 
 	k_sem_give(&dev_data->tx_done_sem);
-}
-
-/* Timer hook function for PHY link state polling */
-static void eth_xlnx_gem_aux_timer (struct k_timer *timer_id)
-{
-	struct net_if *iface = (struct net_if*)timer_id->user_data;
-	struct device *dev   = net_if_get_device(iface);
-	struct eth_xlnx_gem_dev_cfg  *dev_conf = DEV_CFG(dev);
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-	uint8_t aux_thread_notify = ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT;
-	int msgq_rc = 0;
-
-	/* Trigger the respective auxiliary thread by posting the POLL_PHY
-	 * bit into the thread's message queue */
-	msgq_rc = k_msgq_put(&dev_data->aux_thread_msgq,
-		(void*)&aux_thread_notify, K_NO_WAIT);
-
-	if (msgq_rc < 0) {
-		LOG_ERR("GEM@0x%08X auxiliary thread notification for "
-			"PHY status polling failed - k_msgq_put returns %d",
-			dev_conf->base_addr,
-			msgq_rc);
-	}
-}
-
-/* Auxiliary thread function. Handles RX/TX done indications as well as
- * periodic triggers for PHY link state monitoring */
-static void eth_xlnx_gem_aux_thread (void *p1, void *p2, void *p3)
-{
-	struct device *dev = (struct device*)p1;
-	struct net_if *iface = (struct net_if*)p2;
-	struct eth_xlnx_gem_dev_data *dev_data = DEV_DATA(dev);
-	uint8_t aux_thread_notify = 0x00;
-
-	ARG_UNUSED(p3);
-
-	while (1) {
-		k_msgq_get(&dev_data->aux_thread_msgq,
-			&aux_thread_notify, K_FOREVER);
-
-		if ((aux_thread_notify
-			& ETH_XLNX_GEM_AUX_THREAD_POLL_PHY_BIT) != 0) {
-			eth_xlnx_gem_poll_phy(dev, iface);
-		}
-		if ((aux_thread_notify
-			& ETH_XLNX_GEM_AUX_THREAD_TXDONE_BIT) != 0) {
-			eth_xlnx_gem_handle_tx_done(dev);
-		}
-		if ((aux_thread_notify
-			& ETH_XLNX_GEM_AUX_THREAD_RXDONE_BIT) != 0) {
-			eth_xlnx_gem_handle_rx_pending(dev);
-		}
-	}
 }
 
 /* EOF */
