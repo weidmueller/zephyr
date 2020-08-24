@@ -297,9 +297,9 @@ config ETH_XLNX_GEM_PORT_0_PHY_MDIO_ADDRESS
 	  associated with the controller instance.
 
 config ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
+	bool "Advertise lower link speeds during PHY auto-negotiation"
 	depends on ETH_XLNX_GEM_PORT_0
 	depends on ETH_XLNX_GEM_PORT_0_INIT_PHY
-	bool "Advertise lower link speeds during PHY auto-negotiation"
 	default y
 	help
 	  If this option is selected, lower link speeds than the nominal link
@@ -310,6 +310,7 @@ config ETH_XLNX_GEM_PORT_0_PHY_ADVERTISE_LOWER
 config ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING
 	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_0
+	default y
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -318,6 +319,7 @@ config ETH_XLNX_GEM_PORT_0_DEFER_RX_PENDING
 config ETH_XLNX_GEM_PORT_0_DEFER_TX_DONE
 	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_0
+	default y
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -673,9 +675,9 @@ config ETH_XLNX_GEM_PORT_1_PHY_MDIO_ADDRESS
 	  associated with the controller instance.
 
 config ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
+	bool "Advertise lower link speeds during PHY auto-negotiation"
 	depends on ETH_XLNX_GEM_PORT_1
 	depends on ETH_XLNX_GEM_PORT_1_INIT_PHY
-	bool "Advertise lower link speeds during PHY auto-negotiation"
 	default y
 	help
 	  If this option is selected, lower link speeds than the nominal link
@@ -686,6 +688,7 @@ config ETH_XLNX_GEM_PORT_1_PHY_ADVERTISE_LOWER
 config ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING
 	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_1
+	default y
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -694,6 +697,7 @@ config ETH_XLNX_GEM_PORT_1_DEFER_RX_PENDING
 config ETH_XLNX_GEM_PORT_1_DEFER_TX_DONE
 	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_1
+	default y
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -1049,9 +1053,9 @@ config ETH_XLNX_GEM_PORT_2_PHY_MDIO_ADDRESS
 	  associated with the controller instance.
 
 config ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
+	bool "Advertise lower link speeds during PHY auto-negotiation"
 	depends on ETH_XLNX_GEM_PORT_2
 	depends on ETH_XLNX_GEM_PORT_2_INIT_PHY
-	bool "Advertise lower link speeds during PHY auto-negotiation"
 	default y
 	help
 	  If this option is selected, lower link speeds than the nominal link
@@ -1062,6 +1066,7 @@ config ETH_XLNX_GEM_PORT_2_PHY_ADVERTISE_LOWER
 config ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING
 	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_2
+	default y
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -1070,6 +1075,7 @@ config ETH_XLNX_GEM_PORT_2_DEFER_RX_PENDING
 config ETH_XLNX_GEM_PORT_2_DEFER_TX_DONE
 	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_2
+	default y
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -1425,9 +1431,9 @@ config ETH_XLNX_GEM_PORT_3_PHY_MDIO_ADDRESS
 	  associated with the controller instance.
 
 config ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
+	bool "Advertise lower link speeds during PHY auto-negotiation"
 	depends on ETH_XLNX_GEM_PORT_3
 	depends on ETH_XLNX_GEM_PORT_3_INIT_PHY
-	bool "Advertise lower link speeds during PHY auto-negotiation"
 	default y
 	help
 	  If this option is selected, lower link speeds than the nominal link
@@ -1438,6 +1444,7 @@ config ETH_XLNX_GEM_PORT_3_PHY_ADVERTISE_LOWER
 config ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING
 	bool "Defer RX pending handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_3
+	default y
 	help
 	  If this option is enabled, the RX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
@@ -1446,6 +1453,7 @@ config ETH_XLNX_GEM_PORT_3_DEFER_RX_PENDING
 config ETH_XLNX_GEM_PORT_3_DEFER_TX_DONE
 	bool "Defer TX done handling to system work queue"
 	depends on ETH_XLNX_GEM_PORT_3
+	default y
 	help
 	  If this option is enabled, the TX buffer handling triggered by a
 	  corresponding interrupt will not be performed within the ISR, but
