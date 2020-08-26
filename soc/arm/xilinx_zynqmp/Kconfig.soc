@@ -86,12 +86,12 @@ config ZYNQMP_LPD_LSBUS_REFCLK_DPLL
 
 endchoice
 
-config ZYNQMP_LPD_LSBUS_DIVISOR0
+config ZYNQMP_LPD_LSBUS_DIVIDER0
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "LPD LSBUS reference frequency divisor"
+	int "LPD LSBUS reference frequency divider"
 	default 24
 	help
-	  The divisor applied to the LPD LSBUS reference clock.
+	  The divider applied to the LPD LSBUS reference clock.
 
 endmenu
 
@@ -159,22 +159,22 @@ config ZYNQMP_ENET0_REFCLK_DPLL
 
 endchoice
 
-config ZYNQMP_ENET0_DIVISOR0
+config ZYNQMP_ENET0_DIVIDER0
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 0 for ENET0 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 0 for ENET0 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The first divisor applied to the output clock of the reference PLL based on which the ENET0
+	  The first divider applied to the output clock of the reference PLL based on which the ENET0
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
 
-config ZYNQMP_ENET0_DIVISOR1
+config ZYNQMP_ENET0_DIVIDER1
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 1 for ENET0 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 1 for ENET0 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The second divisor applied to the output clock of the reference PLL based on which the ENET0
+	  The second divider applied to the output clock of the reference PLL based on which the ENET0
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
@@ -245,22 +245,22 @@ config ZYNQMP_ENET1_REFCLK_DPLL
 
 endchoice
 
-config ZYNQMP_ENET1_DIVISOR0
+config ZYNQMP_ENET1_DIVIDER0
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 0 for ENET1 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 0 for ENET1 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The first divisor applied to the output clock of the reference PLL based on which the ENET1
+	  The first divider applied to the output clock of the reference PLL based on which the ENET1
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
 
-config ZYNQMP_ENET1_DIVISOR1
+config ZYNQMP_ENET1_DIVIDER1
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 1 for ENET1 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 1 for ENET1 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The second divisor applied to the output clock of the reference PLL based on which the ENET1
+	  The second divider applied to the output clock of the reference PLL based on which the ENET1
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
@@ -331,22 +331,22 @@ config ZYNQMP_ENET2_REFCLK_DPLL
 
 endchoice
 
-config ZYNQMP_ENET2_DIVISOR0
+config ZYNQMP_ENET2_DIVIDER0
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 0 for ENET2 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 0 for ENET2 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The first divisor applied to the output clock of the reference PLL based on which the ENET2
+	  The first divider applied to the output clock of the reference PLL based on which the ENET2
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
 
-config ZYNQMP_ENET2_DIVISOR1
+config ZYNQMP_ENET2_DIVIDER1
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 1 for ENET2 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 1 for ENET2 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The second divisor applied to the output clock of the reference PLL based on which the ENET2
+	  The second divider applied to the output clock of the reference PLL based on which the ENET2
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
@@ -417,22 +417,22 @@ config ZYNQMP_ENET3_REFCLK_DPLL
 
 endchoice
 
-config ZYNQMP_ENET3_DIVISOR0
+config ZYNQMP_ENET3_DIVIDER0
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 0 for ENET3 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 0 for ENET3 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The first divisor applied to the output clock of the reference PLL based on which the ENET3
+	  The first divider applied to the output clock of the reference PLL based on which the ENET3
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.
 
-config ZYNQMP_ENET3_DIVISOR1
+config ZYNQMP_ENET3_DIVIDER1
 	depends on SOC_XILINX_ZYNQMP_RPU
-	int "Reference PLL divisor 1 for ENET3 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 1 for ENET3 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The second divisor applied to the output clock of the reference PLL based on which the ENET3
+	  The second divider applied to the output clock of the reference PLL based on which the ENET3
 	  clock signal is generated. If this value is set to 0, this value will be auto-detected
 	  based on the link speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the external EMIO clock.

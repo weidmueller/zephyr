@@ -65,7 +65,12 @@ typedef uint8_t (*phy_xlnx_gem_poll_link_status_t)(struct device *dev);
 typedef enum eth_xlnx_link_speed (*phy_xlnx_gem_poll_link_speed_t)
 	(struct device *dev);
 
-/* PHY API struct definition */
+/**
+ * @brief Vendor-specific PHY management function pointer table struct
+ *
+ * Contains the PHY management function pointers for a specific PHY
+ * make or model.
+ */
 struct phy_xlnx_gem_api {
 	phy_xlnx_gem_reset_t phy_reset_func;
 	phy_xlnx_gem_configure_t phy_configure_func;
@@ -74,7 +79,12 @@ struct phy_xlnx_gem_api {
 	phy_xlnx_gem_poll_link_speed_t phy_poll_link_speed_func;
 };
 
-/* Supported PHY list struct definition */
+/**
+ * @brief Supported PHY list entry struct
+ *
+ * Contains the PHY management function pointers for a specific PHY
+ * make or model.
+ */
 struct phy_xlnx_gem_supported_dev {
 	uint32_t phy_id;
 	uint32_t phy_id_mask;

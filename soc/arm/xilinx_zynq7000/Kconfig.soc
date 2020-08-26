@@ -57,46 +57,46 @@ config ZYNQ_IOPLL_MULTIPLIER
 	help
 	  The multiplier applied to the PS reference clock by the I/O PLL.
 
-config ZYNQ_ARMPLL_DIVISOR0
+config ZYNQ_ARMPLL_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "ARM PLL divisor for cpu_<xxx> generation"
+	int "ARM PLL divider for cpu_<xxx> generation"
 	default 2
 	help
-	  The divisor applied to the output clock of the ARM PLL based on
+	  The divider applied to the output clock of the ARM PLL based on
 	  which the clock signals cpu_6x4x, cpu_3x2x, cpu_2x and cpu_1x
 	  are generated.
 
-config ZYNQ_DDRPLL_DDR3X_DIVISOR0
+config ZYNQ_DDRPLL_DDR3X_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "DDR PLL divisor for ddr_3x generation"
+	int "DDR PLL divider for ddr_3x generation"
 	default 2
 	help
-	  The divisor applied to the output clock of the DDR PLL based on
+	  The divider applied to the output clock of the DDR PLL based on
 	  which the clock signal ddr_3x is generated.
 
-config ZYNQ_DDRPLL_DDR2X_DIVISOR0
+config ZYNQ_DDRPLL_DDR2X_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "DDR PLL divisor for ddr_2x generation"
+	int "DDR PLL divider for ddr_2x generation"
 	default 3
 	help
-	  The divisor applied to the output clock of the DDR PLL based on
+	  The divider applied to the output clock of the DDR PLL based on
 	  which the clock signal ddr_2x is generated.
 
 
-config ZYNQ_DDRPLL_DDRDCI_DIVISOR0
+config ZYNQ_DDRPLL_DDRDCI_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "DDR PLL divisor 0 for DDR DCI clock generation"
+	int "DDR PLL divider 0 for DDR DCI clock generation"
 	default 35
 	help
-	  The first divisor applied to the output clock of the DDR PLL based
+	  The first divider applied to the output clock of the DDR PLL based
 	  on which the DDR DCI clock signal is generated.
 
-config ZYNQ_DDRPLL_DDRDCI_DIVISOR1
+config ZYNQ_DDRPLL_DDRDCI_DIVIDER1
 	depends on SOC_XILINX_ZYNQ7000
-	int "DDR PLL divisor 1 for DDR DCI clock generation"
+	int "DDR PLL divider 1 for DDR DCI clock generation"
 	default 3
 	help
-	  The second divisor applied to the output clock of the DDR PLL based
+	  The second divider applied to the output clock of the DDR PLL based
 	  on which the DDR DCI clock signal is generated.
 
 ###############################################################################
@@ -155,24 +155,24 @@ config ZYNQ_ENET0_REFCLK_EMIOCLK
 
 endchoice
 
-config ZYNQ_ENET0_DIVISOR0
+config ZYNQ_ENET0_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "Reference PLL divisor 0 for ENET0 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 0 for ENET0 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The first divisor applied to the output clock of the reference PLL
+	  The first divider applied to the output clock of the reference PLL
 	  based on which the ENET0 clock signal is generated. If this value
 	  is set to 0, this value will be auto-detected based on the link
 	  speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the
 	  external EMIO clock.
 
-config ZYNQ_ENET0_DIVISOR1
+config ZYNQ_ENET0_DIVIDER1
 	depends on SOC_XILINX_ZYNQ7000
-	int "Reference PLL divisor 1 for ENET0 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 1 for ENET0 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The second divisor applied to the output clock of the reference PLL
+	  The second divider applied to the output clock of the reference PLL
 	  based on which the ENET0 clock signal is generated. If this value
 	  is set to 0, this value will be auto-detected based on the link
 	  speed selected in the GEM driver's configuration settings. Manual
@@ -233,24 +233,24 @@ config ZYNQ_ENET1_REFCLK_EMIOCLK
 
 endchoice
 
-config ZYNQ_ENET1_DIVISOR0
+config ZYNQ_ENET1_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "Reference PLL divisor 0 for ENET1 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 0 for ENET1 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The first divisor applied to the output clock of the reference PLL
+	  The first divider applied to the output clock of the reference PLL
 	  based on which the ENET1 clock signal is generated. If this value
 	  is set to 0, this value will be auto-detected based on the link
 	  speed selected in the GEM driver's configuration settings. Manual
 	  configuration of this parameter is only required when using the
 	  external EMIO clock.
 
-config ZYNQ_ENET1_DIVISOR1
+config ZYNQ_ENET1_DIVIDER1
 	depends on SOC_XILINX_ZYNQ7000
-	int "Reference PLL divisor 1 for ENET0 clock generation - set to 0 for auto-detection"
+	int "Reference PLL divider 1 for ENET0 clock generation - set to 0 for auto-detection"
 	default 0
 	help
-	  The second divisor applied to the output clock of the reference PLL
+	  The second divider applied to the output clock of the reference PLL
 	  based on which the ENET1 clock signal is generated. If this value
 	  is set to 0, this value will be auto-detected based on the link
 	  speed selected in the GEM driver's configuration settings. Manual
@@ -287,12 +287,12 @@ config ZYNQ_UART01_REFCLK_DDRPLL
 
 endchoice
 
-config ZYNQ_UART01_DIVISOR0
+config ZYNQ_UART01_DIVIDER0
 	depends on SOC_XILINX_ZYNQ7000
-	int "Reference PLL divisor for UART0/1 clock generation"
+	int "Reference PLL divider for UART0/1 clock generation"
 	default 20
 	help
-	  The divisor applied to the output clock of the reference PLL based
+	  The divider applied to the output clock of the reference PLL based
 	  on which the UART0/1 clock signal is generated.
 
 endmenu

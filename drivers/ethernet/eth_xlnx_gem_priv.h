@@ -153,9 +153,9 @@
 #define ETH_XLNX_GEM_NWCFG_PAUSECOPYDI_BIT		0x00800000 /* gem.net_cfg: Do not copy pause Frames to memory */
 #define ETH_XLNX_GEM_NWCFG_DBUSW_MASK			0x3        /* gem.net_cfg: Mask for data bus width */
 #define ETH_XLNX_GEM_NWCFG_DBUSW_SHIFT			21         /* gem.net_cfg: Shift for data bus width */
-#define ETH_XLNX_GEM_NWCFG_MDC_MASK			0x7        /* gem.net_cfg: Mask for MDC clock divisor */
-#define ETH_XLNX_GEM_NWCFG_MDC_SHIFT			18         /* gem.net_cfg: Shift for MDC clock divisor */
-#define ETH_XLNX_GEM_NWCFG_MDCCLKDIV_MASK		0x001C0000 /* gem.net_cfg: MDC Mask PCLK divisor */
+#define ETH_XLNX_GEM_NWCFG_MDC_MASK			0x7        /* gem.net_cfg: Mask for MDC clock divider */
+#define ETH_XLNX_GEM_NWCFG_MDC_SHIFT			18         /* gem.net_cfg: Shift for MDC clock divider */
+#define ETH_XLNX_GEM_NWCFG_MDCCLKDIV_MASK		0x001C0000 /* gem.net_cfg: MDC Mask PCLK divider */
 #define ETH_XLNX_GEM_NWCFG_FCSREM_BIT			0x00020000 /* gem.net_cfg: Discard FCS from received frames */
 #define ETH_XLNX_GEM_NWCFG_LENGTHERRDSCRD_BIT		0x00010000 /* gem.net_cfg: RX length error discard */
 #define ETH_XLNX_GEM_NWCFG_RXOFFS_MASK			0x00000003 /* gem.net_cfg: Mask for RX buffer offset */
@@ -330,24 +330,24 @@ enum eth_xlnx_amba_dbus_width
 };
 
 /**
- * @brief MDC clock divisor configuration enumeration type.
+ * @brief MDC clock divider configuration enumeration type.
  *
  * Enumeration type containing the supported clock divider values
  * used to generate the MDIO interface clock (MDC) from either the
  * cpu_1x clock (Zynq-7000) or the LPD LSBUS clock (UltraScale).
  * This is a configuration item in the controller's net_cfg register.
  */
-enum eth_xlnx_mdc_clock_divisor
+enum eth_xlnx_mdc_clock_divider
 {
 	/* The values of this enum are consecutively numbered */
-	MDC_DIVISOR_8 = 0,
-	MDC_DIVISOR_16,
-	MDC_DIVISOR_32,
-	MDC_DIVISOR_48,
-	MDC_DIVISOR_64,
-	MDC_DIVISOR_96,
-	MDC_DIVISOR_128,
-	MDC_DIVISOR_224
+	MDC_DIVIDER_8 = 0,
+	MDC_DIVIDER_16,
+	MDC_DIVIDER_32,
+	MDC_DIVIDER_48,
+	MDC_DIVIDER_64,
+	MDC_DIVIDER_96,
+	MDC_DIVIDER_128,
+	MDC_DIVIDER_224
 };
 
 /**
@@ -543,8 +543,8 @@ struct eth_xlnx_gem_dev_cfg {
 	uint32_t			reference_clk_freq;
 	enum eth_xlnx_ref_pll		reference_pll;
 	uint32_t			reference_pll_ref_clk_multi;
-	uint32_t			gem_clk_divisor1;
-	uint32_t			gem_clk_divisor0;
+	uint32_t			gem_clk_divider1;
+	uint32_t			gem_clk_divider0;
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
 	enum eth_xlnx_clk_src		gem_clk_source;
@@ -554,7 +554,7 @@ struct eth_xlnx_gem_dev_cfg {
 	enum eth_xlnx_tx_clk_src	gem_tx_clk_source;
 	enum eth_xlnx_ref_pll		lpd_lsbus_pll;
 	uint32_t			lpd_lsbus_pll_ref_clk_multi;
-	uint32_t			lpd_lsbus_divisor0;
+	uint32_t			lpd_lsbus_divider0;
 #endif
 
 #if defined(CONFIG_SOC_XILINX_ZYNQ7000)
@@ -617,7 +617,7 @@ struct eth_xlnx_gem_dev_data {
 	struct k_delayed_work		phy_poll_delayed_work;
 	struct phy_xlnx_gem_api		*phy_access_api;
 
-	enum eth_xlnx_mdc_clock_divisor	mdc_divisor;
+	enum eth_xlnx_mdc_clock_divider	mdc_divider;
 
 	uint8_t				*first_rx_buffer;
 	uint8_t				*first_tx_buffer;
