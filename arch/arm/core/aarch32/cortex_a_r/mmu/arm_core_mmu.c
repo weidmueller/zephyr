@@ -71,8 +71,8 @@ static int arm_mmu_init(struct device *arg) {
 	/* Obtain the base address and the size of the memory area used as RAM
 	 * from the device tree data */
 
-	uint32_t ram_base	= DT_REG_ADDR(DT_CHOSEN(zephyr_sram));
-	uint32_t ram_top	= ram_base + DT_REG_SIZE(DT_CHOSEN(zephyr_sram));
+	uint32_t ram_base = DT_REG_ADDR(DT_CHOSEN(zephyr_sram));
+	uint32_t ram_top  = ram_base + DT_REG_SIZE(DT_CHOSEN(zephyr_sram));
 
 	/* Configure TTB Registers */
 
@@ -99,10 +99,11 @@ static int arm_mmu_init(struct device *arg) {
 				  | ARM_MMU_PAGE_CACHEABLE 
 				  | ARM_MMU_PAGE_BUFFERABLE));
 		} else {
+			/* Strongly ordered */
 			identity_pagetable[iter] = arm_mmu_gen_page_entry(
 				(iter * 0x00100000),
 				(   ARM_MMU_PAGE_PERM_READ 
-				  | ARM_MMU_PAGE_PERM_WRITE)); /* Strongly ordered */
+				  | ARM_MMU_PAGE_PERM_WRITE));
 		}
 	}
 
