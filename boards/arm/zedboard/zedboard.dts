@@ -47,16 +47,7 @@
 	};
 
 	aliases {
-		gic     = &gic;
-		sram0   = &sram0;
-		flash0  = &flash0;
-		uart0   = &uart0;
-		uart1   = &uart1;
-		gem0    = &gem0;
-		gem1    = &gem1;
 		timer   = &arch_timer;
-		ttc0    = &ttc0;
-		ttc1    = &ttc1;
 		ledgpio = &gpio0;
 		swsgpio = &gpio1;
 	};
@@ -91,4 +82,13 @@
 &ttc0 {
 	status = "okay";
 	clock-frequency = <111110000>;
+};
+
+&can0 {
+	status = "okay";
+	bus-speed = <500000>;
+	sjw = <1>;
+	prop-seg = <1>;
+	phase-seg1 = <3>;
+	phase-seg2 = <2>;
 };

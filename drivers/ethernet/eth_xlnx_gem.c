@@ -3252,7 +3252,7 @@ static void eth_xlnx_gem_handle_rx_pending(struct device *dev)
  * @param item Pointer to the work item enqueued by the ISR which
  *             facilitates access to the current device's data
  */
-static void eth_xlnx_gem_tx_done_work (struct k_work *item)
+static void eth_xlnx_gem_tx_done_work(struct k_work *item)
 {
 	struct eth_xlnx_gem_dev_data *dev_data = CONTAINER_OF(item,
 		struct eth_xlnx_gem_dev_data, tx_done_work);

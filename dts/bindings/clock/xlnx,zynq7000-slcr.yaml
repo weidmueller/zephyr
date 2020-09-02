@@ -1,0 +1,200 @@
+#
+# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+# SPDX-License-Identifier: Apache-2.0
+#
+
+description: Xilinx Zynq-7000 System Level Control Registers (SLCR)
+
+compatible: "xlnx,zynq7000-slcr"
+
+include: [clock-controller.yaml, base.yaml]
+
+properties:
+    label:
+      required: true
+
+    reg:
+      required: true
+
+    ps-ref-clk-frequency:
+      type: int
+      description: Processor System reference clock frequency
+      required: true
+
+    clk-domain-mode:
+      type: int
+      description: Clock domain mode setting (6:3:2:1 or 4:2:2:1)
+      required: true
+
+    arm-pll-multiplier:
+      type: int
+      description: ARM PLL multiplier applied to the reference clock
+      required: true
+
+    ddr-pll-multiplier:
+      type: int
+      description: DDR PLL multiplier applied to the reference clock
+      required: true
+
+    io-pll-multiplier:
+      type: int
+      description: IO PLL multiplier applied to the reference clock
+      required: true
+
+    arm-pll-divisor0:
+      type: int
+      description: |
+        Divisor 0 applied to ARM PLL clock for the generation of the
+        cpu_2x and cpu_1x clock signals as well as cpu_6x4x if the clock
+        domain mode is set to 6:3:2:1 or cpu_3x2x if the clock domain
+        mode is set to 4:2:2:1.
+      required: true
+
+    ddr-pll-ddr3x-divisor0:
+      type: int
+      description: |
+        Divisor 0 applied to DDR PLL clock for the generation of the
+        ddr_3x clock signal.
+      required: true
+
+    ddr-pll-ddr2x-divisor0:
+      type: int
+      description: |
+        Divisor 0 applied to DDR PLL clock for the generation of the
+        ddr_2x clock signal.
+      required: true
+
+    ddr-pll-ddr-dci-divisor0:
+      type: int
+      description: |
+        Divisor 0 applied to DDR PLL clock for the generation of the
+        DDR DCI clock signal.
+      required: true
+
+    ddr-pll-ddr-dci-divisor1:
+      type: int
+      description: |
+        Divisor 1 applied to DDR PLL clock for the generation of the
+        DDR DCI clock signal.
+      required: true
+
+    gem0-rx-clk-source:
+      type: int
+      description: |
+        Selects the source of the RX clock as well as the control and
+        data signals for the GEM0 Ethernet controller.
+      required: true
+
+    gem0-ref-clk-source:
+      type: int
+      description: |
+        Selects the reference clock source for the GEM0 Ethernet
+        controller. The TX clock is derived from this clock source.
+      required: true
+
+    gem0-ref-clk-divisor0:
+      type: int
+      description: |
+        First divisor applied to the GEM0 reference clock in order
+        to generate the TX clock based on the reference clock. A
+        fixed value can be specified here, limiting the controller
+        to a specific link speed, or the device driver can calculate
+        the divisors automatically upon a auto-negotiated link speed
+        change. For auto-calculation by the driver, set both reference
+        clock divisors to 0.
+      required: true
+
+    gem0-ref-clk-divisor1:
+      type: int
+      description: |
+        Second divisor applied to the GEM0 reference clock in order
+        to generate the TX clock based on the reference clock. A
+        fixed value can be specified here, limiting the controller
+        to a specific link speed, or the device driver can calculate
+        the divisors automatically upon a auto-negotiated link speed
+        change. For auto-calculation by the driver, set both reference
+        clock divisors to 0.
+      required: true
+
+    gem1-rx-clk-source:
+      type: int
+      description: |
+        Selects the source of the RX clock as well as the control and
+        data signals for the GEM1 Ethernet controller.
+      required: true
+
+    gem1-ref-clk-source:
+      type: int
+      description: |
+        Selects the reference clock source for the GEM1 Ethernet
+        controller. The TX clock is derived from this clock source.
+      required: true
+
+    gem1-ref-clk-divisor0:
+      type: int
+      description: |
+        First divisor applied to the GEM1 reference clock in order
+        to generate the TX clock based on the reference clock. A
+        fixed value can be specified here, limiting the controller
+        to a specific link speed, or the device driver can calculate
+        the divisors automatically upon a auto-negotiated link speed
+        change. For auto-calculation by the driver, set both reference
+        clock divisors to 0.
+      required: true
+
+    gem1-ref-clk-divisor1:
+      type: int
+      description: |
+        Second divisor applied to the GEM1 reference clock in order
+        to generate the TX clock based on the reference clock. A
+        fixed value can be specified here, limiting the controller
+        to a specific link speed, or the device driver can calculate
+        the divisors automatically upon a auto-negotiated link speed
+        change. For auto-calculation by the driver, set both reference
+        clock divisors to 0.
+      required: true
+
+    uart-ref-clk-source:
+      type: int
+      description: |
+        Selects the reference clock source for both UART controllers.
+      required: true
+
+    uart-ref-clk-divisor0:
+      type: int
+      description: |
+        First divisor applied to the UART0/1 reference clock in order
+        to generate the clock signal which will in turn be pre-scaled
+        down so that the controllers operate at their respective target
+        baud rates.
+      required: true
+
+    can-ref-clk-source:
+      type: int
+      description: |
+        Selects the reference clock source for both CAN controllers.
+      required: true
+
+    can-ref-clk-divisor0:
+      type: int
+      description: |
+        First divisor applied to the CAN0/1 reference clock in order
+        to generate the clock signal which will in turn be pre-scaled
+        down so that the controllers operate at their respective target
+        bus speeds.
+      required: true
+
+    can-ref-clk-divisor1:
+      type: int
+      description: |
+        Second divisor applied to the CAN0/1 reference clock in order
+        to generate the clock signal which will in turn be pre-scaled
+        down so that the controllers operate at their respective target
+        bus speeds.
+      required: true
+
+    "#clock-cells":
+      const: 1
+
+clock-cells:
+  - name

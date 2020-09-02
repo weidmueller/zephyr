@@ -160,6 +160,30 @@
 #define DEV_DATA(dev) \
 	((struct can_xlnx_dev_data *)(dev)->driver_data)
 
+/* Device tree / Kconfig data availability checks for all enabled
+ * device instances */
+#if defined(CONFIG_CAN_XLNX_PORT_0) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(can0), okay)
+#error Data missing for CAN0: device tree configuration data is unavailable!
+#endif
+
+#if !defined(CONFIG_CAN_XLNX_PORT_0) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(can0), okay)
+#error CAN0 is marked active in the current device tree, but is not \
+	activated in Kconfig!
+#endif
+
+#if defined(CONFIG_CAN_XLNX_PORT_1) && \
+	!DT_NODE_HAS_STATUS(DT_NODELABEL(can1), okay)
+#error Data missing for CAN1: device tree configuration data is unavailable!
+#endif
+
+#if !defined(CONFIG_CAN_XLNX_PORT_1) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(can1), okay)
+#error CAN1 is marked active in the current device tree, but is not \
+	activated in Kconfig!
+#endif
+
 /**
  * @brief Constant device configuration data structure.
  *
@@ -173,6 +197,13 @@
  */
 struct can_xlnx_dev_cfg {
 	uint32_t	base_addr;
+	uint8_t		tq_sjw;
+	uint8_t		tq_prop;
+	uint8_t		tq_bs1;
+	uint8_t		tq_bs2;
+	uint32_t	bus_speed;
+
+	uint8_t		loopback;
 };
 
 /**
@@ -182,7 +213,7 @@ struct can_xlnx_dev_cfg {
  * controller instance which is modifyable at run-time.
  */
 struct can_xlnx_dev_data {
-	uint8_t		started;
+	can_state_change_isr_t state_change_isr;
 };
 
 #endif /* ZEPHYR_DRIVERS_CAN_XLNX_CAN_H_ */

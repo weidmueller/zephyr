@@ -5,6 +5,7 @@
 
 #include <mem.h>
 #include <arm/armv7-a.dtsi>
+#include <dt-bindings/clock/zynq7000_slcr.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
 / {
@@ -20,6 +21,14 @@
 				compatible = "arm,cortex-a9";
 				reg = <0>;
 			};
+		};
+
+		slcr: clock@f8000000 {
+			compatible = "xlnx,zynq7000-slcr";
+			status = "okay";
+			reg = <0xf8000000 0x1000>;
+			label = "slcr";
+			#clock-cells = <1>;
 		};
 
 		arch_timer: timer@f8f00200 {
@@ -118,6 +127,28 @@
 			interrupt-names = "irq_0", "irq_1", "irq_2";
 			reg = <0xf8002000 0x1000>;
 			label = "ttc1";
+		};
+
+		can0: can@e0008000 {
+			compatible = "xlnx,can";
+			status = "disabled";
+			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0";
+			reg = <0xe0008000 0x1000>;
+			clocks = <&slcr 0>;
+			label = "can0";
+		};
+
+		can1: can@e0009000 {
+			compatible = "xlnx,can";
+			status = "disabled";
+			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_0";
+			reg = <0xe0009000 0x1000>;
+			clocks = <&slcr 0>;
+			label = "can0";
 		};
 	};
 };
