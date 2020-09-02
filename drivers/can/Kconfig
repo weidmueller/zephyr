@@ -60,6 +60,7 @@ config CAN_AUTO_BUS_OFF_RECOVERY
 source "drivers/can/Kconfig.stm32"
 source "drivers/can/Kconfig.mcux"
 source "drivers/can/Kconfig.mcp2515"
+source "drivers/can/Kconfig.xlnx"
 source "drivers/can/Kconfig.loopback"
 source "drivers/can/Kconfig.net"
 
