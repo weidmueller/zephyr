@@ -33,6 +33,10 @@ if NETWORKING
 
 	config NET_L2_ETHERNET
 	default y
+	config NET_CONFIG_SETTINGS
+	default y
+	config NET_CONFIG_MY_IPV4_ADDR
+	default "192.0.2.1"
 
 	config ETH_XLNX_GEM
 	default y
@@ -47,7 +51,7 @@ if NETWORKING
 	default n
 
 	config ETH_XLNX_GEM_PORT_0_INIT_PHY
-	default n
+	default y
 	config ETH_XLNX_GEM_PORT_1_INIT_PHY
 	default n
 	config ETH_XLNX_GEM_PORT_2_INIT_PHY

@@ -7,6 +7,7 @@
 
 /dts-v1/;
 #include <arm/xilinx/zynqmp_rpu.dtsi>
+#include <dt-bindings/ethernet/xlnx_gem.h>
 
 / {
 	model = "QEMU Cortex-R5";
@@ -33,5 +34,7 @@
 
 &gem0 {
 	status = "okay";
+	clock-frequency = <3000000000>;
+	mdc-divider = <XLNX_GEM_MDC_DIVIDER_32>;
 	local-mac-address = [00 80 41 00 00 01];
 };
