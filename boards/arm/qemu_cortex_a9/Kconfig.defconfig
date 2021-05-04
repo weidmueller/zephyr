@@ -44,6 +44,10 @@ if NETWORKING
 
 	config NET_L2_ETHERNET
 	default y
+	config NET_CONFIG_SETTINGS
+	default y
+	config NET_CONFIG_MY_IPV4_ADDR
+	default "192.0.2.1"
 
 	config ETH_XLNX_GEM
 	default y
@@ -54,7 +58,7 @@ if NETWORKING
 	default n
 
 	config ETH_XLNX_GEM_PORT_0_INIT_PHY
-	default n
+	default y
 	config ETH_XLNX_GEM_PORT_1_INIT_PHY
 	default n
 
@@ -63,16 +67,16 @@ if NETWORKING
 	config ETH_XLNX_GEM_PORT_1_DMA_BASE_ADDRESS
 	default 0x00021000
 
-    config NET_NATIVE
-    default y
-    config NET_IPV6
-    default y
-    config NET_IPV4
-    default y
-    config NET_TCP
-    default y
-    config NET_UDP
-    default y
+	config NET_NATIVE
+	default y
+	config NET_IPV6
+	default y
+	config NET_IPV4
+	default y
+	config NET_TCP
+	default y
+	config NET_UDP
+	default y
 
 endif # NETWORKING
 
