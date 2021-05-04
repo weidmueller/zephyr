@@ -2,7 +2,7 @@
  * Xilinx Processor System CAN controller driver
  * for Zynq-7000 and ZynqMP (UltraScale) SoCs
  *
- * Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+ * Copyright (c) 2021, Weidmueller Interface GmbH & Co. KG
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <drivers/can.h>
 
 /* Register offsets within the respective CAN controller's address space */
+/* Comp. Zynq-7000 Technical Reference Manual (ug585), Appendix B.5 */
 #define CAN_XLNX_SRR_OFFSET		0x00000000 /* can.SRR          Software Reset                                    register */
 #define CAN_XLNX_MSR_OFFSET		0x00000004 /* can.MSR          Mode Select                                       register */
 #define CAN_XLNX_BRPR_OFFSET		0x00000008 /* can.BRPR         Baud Rate Prescaler                               register */
@@ -160,30 +161,6 @@
 #define DEV_DATA(dev) \
 	((struct can_xlnx_dev_data *)(dev)->driver_data)
 
-/* Device tree / Kconfig data availability checks for all enabled
- * device instances */
-#if defined(CONFIG_CAN_XLNX_PORT_0) && \
-	!DT_NODE_HAS_STATUS(DT_NODELABEL(can0), okay)
-#error Data missing for CAN0: device tree configuration data is unavailable!
-#endif
-
-#if !defined(CONFIG_CAN_XLNX_PORT_0) && \
-	DT_NODE_HAS_STATUS(DT_NODELABEL(can0), okay)
-#error CAN0 is marked active in the current device tree, but is not \
-	activated in Kconfig!
-#endif
-
-#if defined(CONFIG_CAN_XLNX_PORT_1) && \
-	!DT_NODE_HAS_STATUS(DT_NODELABEL(can1), okay)
-#error Data missing for CAN1: device tree configuration data is unavailable!
-#endif
-
-#if !defined(CONFIG_CAN_XLNX_PORT_1) && \
-	DT_NODE_HAS_STATUS(DT_NODELABEL(can1), okay)
-#error CAN1 is marked active in the current device tree, but is not \
-	activated in Kconfig!
-#endif
-
 /**
  * @brief Constant device configuration data structure.
  *
@@ -197,13 +174,14 @@
  */
 struct can_xlnx_dev_cfg {
 	uint32_t	base_addr;
-	uint8_t		tq_sjw;
-	uint8_t		tq_prop;
-	uint8_t		tq_bs1;
-	uint8_t		tq_bs2;
-	uint32_t	bus_speed;
+	uint32_t	pll_clock_frequency;
 
-	uint8_t		loopback;
+	uint8_t		sjw;
+	uint8_t		prop_seg;
+	uint8_t		phase_seg1;
+	uint8_t		phase_seg2;
+
+	uint32_t	bus_speed;
 };
 
 /**
@@ -214,6 +192,8 @@ struct can_xlnx_dev_cfg {
  */
 struct can_xlnx_dev_data {
 	can_state_change_isr_t state_change_isr;
+	enum can_mode mode;
+	uint32_t bus_speed;
 };
 
 #endif /* ZEPHYR_DRIVERS_CAN_XLNX_CAN_H_ */

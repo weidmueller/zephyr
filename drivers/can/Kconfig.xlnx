@@ -1,8 +1,8 @@
 #
-# Xilinx Processor System Gigabit CAN controller driver
+# Xilinx Processor System CAN controller driver
 # configuration options
 #
-# Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
+# Copyright (c) 2021, Weidmueller Interface GmbH & Co. KG
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -12,38 +12,4 @@ menuconfig CAN_XLNX
 	|| SOC_XILINX_ZYNQMP_APU \
 	|| SOC_XILINX_ZYNQ7000
 	help
-	  Enable Xilinx CAN controller driver.
-
-# ---------- CAN0 ----------
-
-config CAN_XLNX_PORT_0
-	bool "Enable CAN0"
-	depends on CAN_XLNX
-	help
-	  This tells the driver to configure CAN0 at boot, depending on
-	  the additional configuration options below.
-
-config CAN_XLNX_PORT_0_LOOPBACK
-	bool "Enable loopback mode"
-	depends on CAN_XLNX_PORT_0
-	default n
-	help
-	  Enables loopback mode for this interface. For testing purposes
-	  only.
-
-# ---------- CAN1 ----------
-
-config CAN_XLNX_PORT_1
-	bool "Enable CAN1"
-	depends on CAN_XLNX
-	help
-	  This tells the driver to configure CAN1 at boot, depending on
-	  the additional configuration options below.
-
-config CAN_XLNX_PORT_1_LOOPBACK
-	bool "Enable loopback mode"
-	depends on CAN_XLNX_PORT_1
-	default n
-	help
-	  Enables loopback mode for this interface. For testing purposes
-	  only.
+	  Enable Xilinx Zynq-7000 / ZynqMP CAN controller driver.
