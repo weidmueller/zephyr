@@ -95,14 +95,7 @@
  * Constants
  */
 
-/* Maximum value of interval counter:
- * The UltraScale implementation of the TTC has count / match / interval
- * registers that are 32 bits wide, while on the Zynq-7000, those registers
- * are limited to 16 bit values.*/
-#ifndef CONFIG_SOC_XILINX_ZYNQ7000
+/* Maximum value of interval counter */
 #define XTTC_MAX_INTERVAL_COUNT 0xFFFFFFFFU
-#else
-#define XTTC_MAX_INTERVAL_COUNT 0x0000FFFFU
-#endif
 
 #endif /* ZEPHYR_DRIVERS_TIMER_XLNX_PSTTC_TIMER_PRIV_H_ */
