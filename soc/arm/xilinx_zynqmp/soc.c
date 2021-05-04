@@ -10,25 +10,25 @@
 #include <init.h>
 #include <arch/arm/aarch32/cortex_a_r/cmsis.h>
 
+#include "soc.h"
+
 /**
+ * @brief Basic hardware initialization of the ZynqMP SoC
  *
- * @brief Perform basic hardware initialization
+ * Performs the basic initialization of the ZynqMP SoC.
  *
  * @return 0
  */
-
-static int soc_init(struct device *arg)
+static int soc_xlnx_zynqmp_init(struct device *arg)
 {
 	ARG_UNUSED(arg);
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
 	NMI_INIT();
+
 	return 0;
 }
 
-SYS_INIT(soc_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(soc_xlnx_zynqmp_init, PRE_KERNEL_1,
+	CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
 void z_platform_init(void)
 {
