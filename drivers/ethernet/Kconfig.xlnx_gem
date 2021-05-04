@@ -19,24 +19,9 @@ config ETH_NIC_MODEL
 	default "cadence_gem"
 	depends on ETH_XLNX_GEM
 	help
-	  Tells what Qemu network model to use. This value is given as
-	  a parameter to -nic qemu command line option.
-
-config ETH_XLNX_DBG_PRINT_PACKETS_IN
-	bool "Debug: hexdump all received packets"
-	depends on ETH_XLNX_GEM
-	default n
-	help
-	  Dumps any received packet data to the console before it is handed 
-	  over to the network stack.
-
-config ETH_XLNX_DBG_PRINT_PACKETS_OUT
-	bool "Debug: hexdump all transmitted packets"
-	depends on ETH_XLNX_GEM
-	default n
-	help
-	  Dumps any packet data provided by the network stack to the console
-	  prior to transmission.
+	  Value of the -nic parameter to be used when starting QEMU.
+	  This parameter specifies which type of Ethernet controller
+	  shall be simulated by QEMU.
 
 # ---------- GEM0 ----------
 
@@ -54,7 +39,7 @@ config ETH_XLNX_GEM_PORT_0_RXBD_COUNT
 	int "Number of DMA RX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_0
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of RX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -63,18 +48,17 @@ config ETH_XLNX_GEM_PORT_0_RX_BUFFER_SIZE
 	int "Receive buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_0
 	default 512
-	range 128 1540
+	range 64 16320
 	help
 	  Sets the size of the RX packet data buffers in memory which will
-	  be accessed by the GEM via DMA. The value specified here will be
-	  adjusted to match the buffer alignment requirements of the
-	  controller.
+	  be accessed by the GEM via DMA. This value must be a multiple of
+	  64 bytes.
 
 config ETH_XLNX_GEM_PORT_0_TXBD_COUNT
 	int "Number of DMA TX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_0
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of TX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -83,7 +67,7 @@ config ETH_XLNX_GEM_PORT_0_TX_BUFFER_SIZE
 	int "Transmit buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_0
 	default 512
-	range 128 1540
+	range 64 16320
 	help
 	  Sets the size of the TX packet data buffers in memory which will 
 	  be accessed by the GEM via DMA. The value specified here will be
@@ -132,17 +116,6 @@ config ETH_XLNX_GEM_PORT_0_HWTX_BUFFER_SIZE_HALF
 
 endchoice
 
-config ETH_XLNX_GEM_PORT_0_AHB_RX_BUFFER_SIZE
-	int "DMA RX buffer size in AHB system memory, <n> times 64 Bytes"
-	depends on ETH_XLNX_GEM_PORT_0
-	range 1 255
-	default 24
-	help
-	  Configures the size of the RX buffer in the AHB system memory
-	  by specifying a multiplier of 64 bytes. E.g., the RX buffer size
-	  large enough for the reception of a <= 1536 bytes frame is 
-	  24 * 64 bytes.
-
 choice
 	prompt "RX/TX memory location configuration"
 	depends on ETH_XLNX_GEM_PORT_0
@@ -167,7 +140,7 @@ config ETH_XLNX_GEM_PORT_0_DMA_BASE_ADDRESS
 	depends on ETH_XLNX_GEM_PORT_0_DMA_FIXED
 	hex "Base address of RX/TX data memory"
 	range 0x00000000 0xFFFFFFFF
-	default 0xFFFE0000
+	default 0x00001000
 	help
 	  Base address of the RX/TX data memory to be used by the controller.
 
@@ -432,7 +405,7 @@ config ETH_XLNX_GEM_PORT_1_RXBD_COUNT
 	int "Number of DMA RX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_1
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of RX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -441,18 +414,17 @@ config ETH_XLNX_GEM_PORT_1_RX_BUFFER_SIZE
 	int "Receive buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_1
 	default 512
-	range 128 1540
+	range 64 16320
 	help
 	  Sets the size of the RX packet data buffers in memory which will
-	  be accessed by the GEM via DMA. The value specified here will be
-	  adjusted to match the buffer alignment requirements of the 
-	  controller.
+	  be accessed by the GEM via DMA. This value must be a multiple of
+	  64 bytes.
 
 config ETH_XLNX_GEM_PORT_1_TXBD_COUNT
 	int "Number of DMA TX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_1
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of TX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -461,9 +433,9 @@ config ETH_XLNX_GEM_PORT_1_TX_BUFFER_SIZE
 	int "Transmit buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_1
 	default 512
-	range 128 1540
+	range 64 16320
 	help
-	  Sets the size of the TX packet data buffers in memory which will
+	  Sets the size of the TX packet data buffers in memory which will 
 	  be accessed by the GEM via DMA. The value specified here will be
 	  adjusted to match the buffer alignment requirements of the
 	  controller.
@@ -509,17 +481,6 @@ config ETH_XLNX_GEM_PORT_1_HWTX_BUFFER_SIZE_HALF
 	bool "Use half of the available TX buffer size (2 kB)"
 
 endchoice
-
-config ETH_XLNX_GEM_PORT_1_AHB_RX_BUFFER_SIZE
-	int "DMA RX buffer size in AHB system memory, <n> times 64 Bytes"
-	depends on ETH_XLNX_GEM_PORT_1
-	range 1 255
-	default 24
-	help
-	  Configures the size of the RX buffer in the AHB system memory
-	  by specifying a multiplier of 64 bytes. E.g., the RX buffer size
-	  large enough for the reception of a <= 1536 bytes frame is 
-	  24 * 64 bytes.
 
 choice
 	prompt "RX/TX memory location configuration"
@@ -811,7 +772,7 @@ config ETH_XLNX_GEM_PORT_2_RXBD_COUNT
 	int "Number of DMA RX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_2
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of RX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -820,18 +781,17 @@ config ETH_XLNX_GEM_PORT_2_RX_BUFFER_SIZE
 	int "Receive buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_2
 	default 512
-	range 128 1540
+	range 64 16320
 	help
 	  Sets the size of the RX packet data buffers in memory which will
-	  be accessed by the GEM via DMA. The value specified here will be
-	  adjusted to match the buffer alignment requirements of the 
-	  controller.
+	  be accessed by the GEM via DMA. This value must be a multiple of
+	  64 bytes.
 
 config ETH_XLNX_GEM_PORT_2_TXBD_COUNT
 	int "Number of DMA TX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_2
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of TX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -840,9 +800,9 @@ config ETH_XLNX_GEM_PORT_2_TX_BUFFER_SIZE
 	int "Transmit buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_2
 	default 512
-	range 128 1540
+	range 64 16320
 	help
-	  Sets the size of the TX packet data buffers in memory which will
+	  Sets the size of the TX packet data buffers in memory which will 
 	  be accessed by the GEM via DMA. The value specified here will be
 	  adjusted to match the buffer alignment requirements of the
 	  controller.
@@ -888,17 +848,6 @@ config ETH_XLNX_GEM_PORT_2_HWTX_BUFFER_SIZE_HALF
 	bool "Use half of the available TX buffer size (2 kB)"
 
 endchoice
-
-config ETH_XLNX_GEM_PORT_2_AHB_RX_BUFFER_SIZE
-	int "DMA RX buffer size in AHB system memory, <n> times 64 Bytes"
-	depends on ETH_XLNX_GEM_PORT_2
-	range 1 255
-	default 24
-	help
-	  Configures the size of the RX buffer in the AHB system memory
-	  by specifying a multiplier of 64 bytes. E.g., the RX buffer size
-	  large enough for the reception of a <= 1536 bytes frame is 
-	  24 * 64 bytes.
 
 choice
 	prompt "RX/TX memory location configuration"
@@ -1189,7 +1138,7 @@ config ETH_XLNX_GEM_PORT_3_RXBD_COUNT
 	int "Number of DMA RX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_3
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of RX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -1198,18 +1147,17 @@ config ETH_XLNX_GEM_PORT_3_RX_BUFFER_SIZE
 	int "Receive buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_3
 	default 512
-	range 128 1540
+	range 64 16320
 	help
 	  Sets the size of the RX packet data buffers in memory which will
-	  be accessed by the GEM via DMA. The value specified here will be
-	  adjusted to match the buffer alignment requirements of the 
-	  controller.
+	  be accessed by the GEM via DMA. This value must be a multiple of
+	  64 bytes.
 
 config ETH_XLNX_GEM_PORT_3_TXBD_COUNT
 	int "Number of DMA TX data buffers and descriptors"
 	depends on ETH_XLNX_GEM_PORT_3
 	default 32
-	range 1 128
+	range 16 256
 	help
 	  Sets the number of TX packet data buffers and corresponding buffer
 	  descriptors in memory which will be accessed by the GEM via DMA.
@@ -1218,9 +1166,9 @@ config ETH_XLNX_GEM_PORT_3_TX_BUFFER_SIZE
 	int "Transmit buffer size (in bytes)"
 	depends on ETH_XLNX_GEM_PORT_3
 	default 512
-	range 128 1540
+	range 64 16320
 	help
-	  Sets the size of the TX packet data buffers in memory which will
+	  Sets the size of the TX packet data buffers in memory which will 
 	  be accessed by the GEM via DMA. The value specified here will be
 	  adjusted to match the buffer alignment requirements of the
 	  controller.
@@ -1266,17 +1214,6 @@ config ETH_XLNX_GEM_PORT_3_HWTX_BUFFER_SIZE_HALF
 	bool "Use half of the available TX buffer size (2 kB)"
 
 endchoice
-
-config ETH_XLNX_GEM_PORT_3_AHB_RX_BUFFER_SIZE
-	int "DMA RX buffer size in AHB system memory, <n> times 64 Bytes"
-	depends on ETH_XLNX_GEM_PORT_3
-	range 1 255
-	default 24
-	help
-	  Configures the size of the RX buffer in the AHB system memory
-	  by specifying a multiplier of 64 bytes. E.g., the RX buffer size
-	  large enough for the reception of a <= 1536 bytes frame is 
-	  24 * 64 bytes.
 
 choice
 	prompt "RX/TX memory location configuration"

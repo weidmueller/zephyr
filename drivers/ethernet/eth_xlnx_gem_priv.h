@@ -55,49 +55,24 @@
 #define ETH_XLNX_GEM_TXBD_LEN_MASK			0x00003FFF /* Control word: Mask for length field */
 #define ETH_XLNX_GEM_TXBD_ERR_MASK			0x3C000000 /* Control word: Mask for error field */
 
-/* SLCR register space & magic words: Zynq-7000 */
+/* TX clock configuration: Zynq-7000 */
 #ifdef CONFIG_SOC_XILINX_ZYNQ7000
-#define ETH_XLNX_SLCR_BASE_ADDRESS			0xF8000000
-#define ETH_XLNX_SLCR_LOCK_REGISTER			(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000004)
-#define ETH_XLNX_SLCR_UNLOCK_REGISTER			(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000008)
-#define ETH_XLNX_SLCR_APER_CLK_CTRL_REGISTER		(ETH_XLNX_SLCR_BASE_ADDRESS + 0x0000012C)
-#define ETH_XLNX_SLCR_GEM0_RCLK_CTRL_REGISTER		(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000138)
-#define ETH_XLNX_SLCR_GEM1_RCLK_CTRL_REGISTER		(ETH_XLNX_SLCR_BASE_ADDRESS + 0x0000013C)
-#define ETH_XLNX_SLCR_RCLK_CTRL_REGISTER_SRC_MASK	0x00000001
-#define ETH_XLNX_SLCR_RCLK_CTRL_REGISTER_SRC_SHIFT	4
-#define ETH_XLNX_SLCR_GEM0_CLK_CTRL_REGISTER		(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000140)
-#define ETH_XLNX_SLCR_GEM1_CLK_CTRL_REGISTER		(ETH_XLNX_SLCR_BASE_ADDRESS + 0x00000144)
-#define ETH_XLNX_SLRC_CLK_CTR_REGISTER_DIV_MASK		0x0000003F
-#define ETH_XLNX_SLRC_CLK_CTR_REGISTER_DIV1_SHIFT	20
-#define ETH_XLNX_SLRC_CLK_CTR_REGISTER_DIV0_SHIFT	8
-#define ETH_XLNX_SLRC_CLK_CTR_REGISTER_REF_PLL_MASK	0x00000007
-#define ETH_XLNX_SLRC_CLK_CTR_REGISTER_REF_PLL_SHIFT	4
-
-#define ETH_XLNX_SLCR_UNLOCK_CONSTANT			0xDF0D
-#define ETH_XLNX_SLCR_LOCK_CONSTANT			0x767B
-#define ETH_XLNX_SLCR_CLK_ENABLE_BIT			0x00000001
-#define ETH_XLNX_SLCR_RCLK_ENABLE_BIT			0x00000001
+#define ETH_XLNX_SLCR_LOCK_REGISTER_ADDRESS		0xF8000004
+#define ETH_XLNX_SLCR_UNLOCK_REGISTER_ADDRESS		0xF8000008
+#define ETH_XLNX_SLCR_LOCK_KEY				0x767B
+#define ETH_XLNX_SLCR_UNLOCK_KEY			0xDF0D
+#define ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR_MASK	0x0000003F
+#define ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR1_SHIFT	20
+#define ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR0_SHIFT	8
 #endif /* CONFIG_SOC_XILINX_ZYNQ7000 */
 
-/* SLCR register space & magic words: UltraScale */
+/* TX clock configuration: UltraScale */
 #ifdef CONFIG_SOC_XILINX_ZYNQMP
-#define ETH_XLNX_IOU_SLCR_BASE_ADDRESS			0xFF180000
-#define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_REGISTER		(ETH_XLNX_IOU_SLCR_BASE_ADDRESS + 0x00000308)
-#define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM0	0
-#define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM1	5
-#define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM2	10
-#define ETH_XLNX_IOU_SLCR_GEM_CLK_CTRL_SHIFT_GEM3	15
-#define ETH_XLNX_CRL_APB_BASE_ADDRESS			0xFF5E0000
-#define ETH_XLNX_CRL_APB_GEM0_REF_CTRL_REGISTER		(ETH_XLNX_CRL_APB_BASE_ADDRESS + 0x00000050)
-#define ETH_XLNX_CRL_APB_GEM1_REF_CTRL_REGISTER		(ETH_XLNX_CRL_APB_BASE_ADDRESS + 0x00000054)
-#define ETH_XLNX_CRL_APB_GEM2_REF_CTRL_REGISTER		(ETH_XLNX_CRL_APB_BASE_ADDRESS + 0x00000058)
-#define ETH_XLNX_CRL_APB_GEM3_REF_CTRL_REGISTER		(ETH_XLNX_CRL_APB_BASE_ADDRESS + 0x0000005C)
-#define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_ACTBITS_SHIFT	25
-#define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_ACTBITS_MASK	0x00000003
+#define ETH_XLNX_CRL_APB_WPROT_REGISTER_ADDRESS		0xFF5E001C
+#define ETH_XLNX_CRL_APB_WPROT_BIT			0x00000001
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR_MASK	0x0000003F
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR1_SHIFT	16
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR0_SHIFT	8
-#define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_SRCSEL_MASK	0x00000007
 #endif /* CONFIG_SOC_XILINX_ZYNQMP */
 
 /* Register offsets within the respective GEM's address space */
@@ -383,86 +358,6 @@ enum eth_xlnx_ahb_burst_length
 	AHB_BURST_INCR16 = 16
 };
 
-#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-/**
- * @brief Reference clock source configuration enumeration type.
- *
- * Enumeration type containing the supported clock sources for the
- * controller's TX reference clock, to which pre-scalers will be
- * applied depending on the current link speed. This is a Zynq-7000
- * specific configuration item in the CLK register of the Zynq's SLCR.
- */
-enum eth_xlnx_ref_pll
-{
-	IO_PLL   = 0,
-	ARM_PLL  = 2,
-	DDR_PLL  = 3,
-	EMIO_CLK = 4
-};
-
-/**
- * @brief RX clock source configuration enumeration type.
- *
- * Enumeration type containing the supported clock sources for the
- * controller's RX clock. This is a Zynq-7000 specific configuration
- * item in the RCLK register of the Zynq's SLCR.
- */
-enum eth_xlnx_clk_src
-{
-	/* The values of this enum are consecutively numbered */
-	CLK_SRC_MIO = 0,
-	CLK_SRC_EMIO
-};
-#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-/**
- * @brief Reference clock PLL configuration enumeration type.
- *
- * Enumeration type containing the PLLs supported as clock sources
- * for the controller's TX reference clock, to which pre-scalers will
- * be applied depending on the current link speed. This is an UltraScale
- * specific configuration item in the GEMx_REF_CTRL register of the
- * UltraScale's CRL_APB.
- */
-enum eth_xlnx_ref_pll
-{
-	IO_PLL       = 0,
-	R_PLL        = 2,
-	D_PLL_TO_LPD = 3
-};
-
-/**
- * @brief RX clock source configuration enumeration type.
- *
- * Enumeration type containing the supported clock sources for the
- * controller's RX clock. This is an UltraScale specific configuration
- * item in the GEM_CLK_CTRL register of the UltraScale's IOU SLCR.
- */
-enum eth_xlnx_rx_clk_src
-{
-	/* The values of this enum are consecutively numbered */
-	CLK_SRC_MIO = 0,
-	CLK_SRC_EMIO
-};
-
-/**
- * @brief Reference clock source configuration enumeration type.
- *
- * Enumeration type containing the supported clock sources for the
- * controller's TX reference clock. This switch determines if one
- * of the PLLs listed in the enum eth_xlnx_ref_pll will provide the
- * TX reference clock, or if the EMIO PLL clock or the GTX clock
- * shall provide the TX reference clock. This is an UltraScale
- * specific configuration item in the GEM_CLK_CTRL register of the
- * UltraScale's IOU SLCR.
- */
-enum eth_xlnx_tx_clk_src
-{
-	/* The values of this enum are consecutively numbered */
-	CLK_SRC_PLL_REF = 0,
-	CLK_SRC_EMIO_PLL_GTX
-};
-#endif /* CONFIG_SOC_XILINX_ZYNQ7000 / CONFIG_SOC_XILINX_ZYNQMP */
-
 /**
  * @brief DMA memory area buffer descriptor.
  *
@@ -474,7 +369,8 @@ enum eth_xlnx_tx_clk_src
  */
 struct eth_xlnx_gem_bd
 {
-	/* TODO for Cortex-A53: 64-bit addressing and timestamping support */
+	/* TODO for Cortex-A53: 64-bit addressing
+	 * TODO: timestamping support */
 	/* Buffer physical address (absolute address) */
 	uint32_t		addr;
 	/* Buffer control word (different contents for RX and TX) */
@@ -523,6 +419,10 @@ struct eth_xlnx_gem_dev_cfg {
 	uint32_t			base_addr;
 	eth_xlnx_gem_config_irq_t	config_func;
 
+	uint32_t			pll_clock_frequency;
+	uint32_t			clk_ctrl_reg_address;
+	enum eth_xlnx_mdc_clock_divider	mdc_divider;
+
 	enum eth_xlnx_link_speed	max_link_speed;
 	uint8_t				init_phy;
 	uint8_t				phy_mdio_addr_fix;
@@ -535,34 +435,6 @@ struct eth_xlnx_gem_dev_cfg {
 	enum eth_xlnx_ahb_burst_length	ahb_burst_length;
 	enum eth_xlnx_hwrx_buffer_size	hw_rx_buffer_size;
 	uint8_t				hw_rx_buffer_offset;
-	uint8_t				ahb_rx_buffer_size;
-#ifdef CONFIG_SOC_XILINX_ZYNQ7000
-	uint8_t				amba_clk_en_bit;
-#endif
-
-	uint32_t			reference_clk_freq;
-	enum eth_xlnx_ref_pll		reference_pll;
-	uint32_t			reference_pll_ref_clk_multi;
-	uint32_t			gem_clk_divider1;
-	uint32_t			gem_clk_divider0;
-
-#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-	enum eth_xlnx_clk_src		gem_clk_source;
-#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-	uint32_t			gem_clk_ctrl_shift;
-	enum eth_xlnx_rx_clk_src	gem_rx_clk_source;
-	enum eth_xlnx_tx_clk_src	gem_tx_clk_source;
-	enum eth_xlnx_ref_pll		lpd_lsbus_pll;
-	uint32_t			lpd_lsbus_pll_ref_clk_multi;
-	uint32_t			lpd_lsbus_divider0;
-#endif
-
-#if defined(CONFIG_SOC_XILINX_ZYNQ7000)
-	uint32_t			slcr_clk_register_addr;
-	uint32_t			slcr_rclk_register_addr;
-#elif defined(CONFIG_SOC_XILINX_ZYNQMP)
-	uint32_t			crl_apb_ref_ctrl_register_addr;
-#endif
 
 	uint8_t				rxbd_count;
 	uint8_t				txbd_count;
@@ -616,8 +488,6 @@ struct eth_xlnx_gem_dev_data {
 	uint32_t			phy_id;
 	struct k_delayed_work		phy_poll_delayed_work;
 	struct phy_xlnx_gem_api		*phy_access_api;
-
-	enum eth_xlnx_mdc_clock_divider	mdc_divider;
 
 	uint8_t				*first_rx_buffer;
 	uint8_t				*first_tx_buffer;
