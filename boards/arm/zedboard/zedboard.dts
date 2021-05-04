@@ -7,6 +7,7 @@
 
 #include <xilinx/zynq7000.dtsi>
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/ethernet/xlnx_gem.h>
 
 / {
 	model = "AVNET/Digilent Zedboard";
@@ -62,13 +63,17 @@
 
 &gem0 {
 	status = "okay";
+	clock-frequency = <1000000000>;
+	mdc-divider = <XLNX_GEM_MDC_DIVIDER_224>;
+
 	local-mac-address = [00 80 41 00 00 01];
 };
 
 &uart1 {
 	status = "okay";
-	current-speed = <115200>;
 	clock-frequency = <50000000>;
+
+	current-speed = <115200>;
 };
 
 &gpio0 {
@@ -79,14 +84,11 @@
 	status = "okay";
 };
 
-&ttc0 {
-	status = "okay";
-	clock-frequency = <111110000>;
-};
-
 &can0 {
 	status = "okay";
-	bus-speed = <500000>;
+	clock-frequency = <100000000>;
+
+	bus-speed = <250000>;
 	sjw = <1>;
 	prop-seg = <1>;
 	phase-seg1 = <3>;

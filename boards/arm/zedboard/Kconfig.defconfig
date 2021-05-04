@@ -61,16 +61,16 @@ if NETWORKING
 	config ETH_XLNX_GEM_PORT_1_DMA_BASE_ADDRESS
 	default 0x00021000
 
-    config NET_NATIVE
-    default y
-    config NET_IPV6
-    default y
-    config NET_IPV4
-    default y
-    config NET_TCP
-    default y
-    config NET_UDP
-    default y
+	config NET_NATIVE
+	default y
+	config NET_IPV6
+	default y
+	config NET_IPV4
+	default y
+	config NET_TCP
+	default y
+	config NET_UDP
+	default y
 
 endif # NETWORKING
 
