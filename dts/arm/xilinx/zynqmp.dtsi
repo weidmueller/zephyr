@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Lexmark International, Inc.
+ * Copyright (c) 2020, Weidmueller Interface GmbH & Co. KG
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -89,6 +90,7 @@
 		gem0: ethernet@ff0b0000 {
 			compatible = "xlnx,gem";
 			reg = <0xff0b0000 0x1000>;
+			clk-ctrl-reg = <0xff5e0050>;
 			status = "disabled";
 			interrupts = <GIC_SPI 57 IRQ_TYPE_LEVEL 
 					IRQ_DEFAULT_PRIORITY>,
@@ -101,6 +103,7 @@
 		gem1: ethernet@ff0c0000 {
 			compatible = "xlnx,gem";
 			reg = <0xff0c0000 0x1000>;
+			clk-ctrl-reg = <0xff5e0054>;
 			status = "disabled";
 			interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL 
 					IRQ_DEFAULT_PRIORITY>,
@@ -113,6 +116,7 @@
 		gem2: ethernet@ff0d0000 {
 			compatible = "xlnx,gem";
 			reg = <0xff0d0000 0x1000>;
+			clk-ctrl-reg = <0xff5e0058>;
 			status = "disabled";
 			interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL 
 					IRQ_DEFAULT_PRIORITY>,
@@ -125,6 +129,7 @@
 		gem3: ethernet@ff0e0000 {
 			compatible = "xlnx,gem";
 			reg = <0xff0e0000 0x1000>;
+			clk-ctrl-reg = <0xff5e005c>;
 			status = "disabled";
 			interrupts = <GIC_SPI 63 IRQ_TYPE_LEVEL 
 					IRQ_DEFAULT_PRIORITY>,
