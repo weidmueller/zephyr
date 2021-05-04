@@ -12,5 +12,35 @@ include: ethernet.yaml
 properties:
     reg:
       required: true
+
     interrupts:
       required: true
+
+    clock-frequency:
+      type: int
+      required: true
+      description: TX Clock base frequency
+        Specifies the base clock frequency from which the GEM's TX clock
+        frequency will be derived using two dividers in the respective GEM's
+        clock control register in the SLCR. The GEM's TX clock frequency
+        is determined by the current link speed reported by the PHY, to
+        which it will be adjusted at run-time. Therefore, the value of this
+        item must be set to the clock frequency of the PLL supplying the
+        respective GEM's TX clock - by default, this is the IO PLL.
+
+    clk-ctrl-reg:
+      type: int
+      required: true
+      description: TX Clock frequency control register address
+        The address of the respective GEM's TX clock control register
+        (GEMx_REF_CTRL in the CRL_APB register space on ZynqMP).
+
+    mdc-divider:
+      type: int
+      required: true
+      description: The MDC clock divider for the respective GEM. This is the
+        divider applied to the cpu_1x clock in order to derive MDIO interface
+        clock driving communications with the attached PHY. Refer to the
+        Zynq-7000 TRM (Xilinx document ID UG585), Appendix B, documentation of
+        register XEMACPS_NWCFG, p. 1274 ff., bits 20:18 to determine the
+        appropriate divider for the target's cpu_1x clock frequency.
