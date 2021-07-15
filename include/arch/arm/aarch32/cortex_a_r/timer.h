@@ -63,6 +63,30 @@ static ALWAYS_INLINE void arm_arch_timer_set_compare(uint64_t val)
 	sys_write32(ctrl, TIMER_REG_GET(TIMER_CTRL));
 }
 
+#if defined(CONFIG_ARM_ARCH_TIMER_ERRATUM_740657) || defined(CONFIG_QEMU_TARGET)
+
+/*
+ * R/W access to the event flag register is required for the timer errata
+ * 740657 workaround -> comp. ISR implementation in arm_arch_timer.c.
+ * This functionality is not present in the aarch64 implementation of the
+ * ARM global timer access functions. 
+ * 
+ * comp. ARM Cortex-A9 processors Software Developers Errata Notice,
+ * ARM document ID032315.
+ */
+
+static ALWAYS_INLINE uint8_t arm_arch_timer_get_int_status(void)
+{
+	return (uint8_t)(sys_read32(TIMER_REG_GET(TIMER_ISR)) & 0x1);
+}
+
+static ALWAYS_INLINE void arm_arch_timer_clear_int_status(void)
+{
+	sys_write32(0x1, TIMER_REG_GET(TIMER_ISR));
+}
+
+#endif /* CONFIG_ARM_ARCH_TIMER_ERRATUM_740657 || CONFIG_QEMU_TARGET */
+
 static ALWAYS_INLINE void arm_arch_timer_enable(bool enable)
 {
 	uint32_t ctrl;
