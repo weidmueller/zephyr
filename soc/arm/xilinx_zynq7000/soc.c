@@ -25,6 +25,10 @@ static const struct arm_mmu_region mmu_regions[] = {
 			      0xF8F00000,
 			      0x2000,
 			      MT_STRONGLY_ORDERED | MPERM_R | MPERM_W),
+	MMU_REGION_FLAT_ENTRY("OCM",
+			      DT_REG_ADDR(DT_CHOSEN(zephyr_ocm)),
+			      DT_REG_SIZE(DT_CHOSEN(zephyr_ocm)),
+			      MT_STRONGLY_ORDERED | MPERM_R | MPERM_W),
 	/* ARM Arch timer, GIC are covered by the MPCore mapping */
 /* UARTs */
 #if DT_NODE_HAS_STATUS(DT_INST(0, xlnx_xuartps), okay)
