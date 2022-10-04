@@ -1,7 +1,7 @@
 /*
  * Xilinx Processor System Gigabit Ethernet controller (GEM) driver
  *
- * Copyright (c) 2021-2022, Weidmueller Interface GmbH & Co. KG
+ * Copyright (c) 2021, Weidmueller Interface GmbH & Co. KG
  * SPDX-License-Identifier: Apache-2.0
  *
  * Known current limitations / TODOs:
@@ -12,10 +12,11 @@
  * - Wake-on-LAN interrupt not supported.
  * - Send function is not SMP-capable (due to single TX done semaphore).
  * - Interrupt-driven PHY management not supported - polling only.
- * - Auto-placement of the DMA memory area(s) in the OCM selected via
- *   the corresponding "chosen" entry in the target SoC's DT. No manual
- *   placement option, as the DMA should reside in an area which is
- *   properly configured for DMA use by either an MMU or an MPU.
+ * - No explicit placement of the DMA memory area(s) in either a
+ *   specific memory section or at a fixed memory location yet. This
+ *   is not an issue as long as the controller is used in conjunction
+ *   with the Cortex-R5 QEMU target or an actual R5 running without the
+ *   MPU enabled.
  * - No detailed error handling when evaluating the Interrupt Status,
  *   RX Status and TX Status registers.
  */
@@ -113,11 +114,18 @@ static int eth_xlnx_gem_dev_init(const struct device *dev)
 		 "%s invalid max./nominal link speed value %u",
 		 dev->name, (uint32_t)dev_conf->max_link_speed);
 
-	/* MDC clock divider validity check */
+	/* MDC clock divider validity check, SoC dependent */
+#if defined(CONFIG_SOC_XILINX_ZYNQMP)
+	__ASSERT(dev_conf->mdc_divider <= MDC_DIVIDER_48,
+		 "%s invalid MDC clock divider value %u, must be in "
+		 "range 0 to %u", dev->name, dev_conf->mdc_divider,
+		 (uint32_t)MDC_DIVIDER_48);
+#elif defined(CONFIG_SOC_FAMILY_XILINX_ZYNQ7000)
 	__ASSERT(dev_conf->mdc_divider <= MDC_DIVIDER_224,
 		 "%s invalid MDC clock divider value %u, must be in "
 		 "range 0 to %u", dev->name, dev_conf->mdc_divider,
 		 (uint32_t)MDC_DIVIDER_224);
+#endif
 
 	/* AMBA AHB configuration options */
 	__ASSERT((dev_conf->amba_dbus_width == AMBA_AHB_DBUS_WIDTH_32BIT ||
@@ -279,10 +287,7 @@ static void eth_xlnx_gem_isr(const struct device *dev)
 	 * comp. Zynq-7000 TRM, Chapter B.18, p. 1289/1290.
 	 * If the respective condition's handling is configured to be deferred
 	 * to the work queue thread, submit the corresponding job to the work
-	 * queue, otherwise, handle the condition immediately. Until then,
-	 * disable the respective interrupt source and clear its pending status
-	 * bit, the interrupt source will be re-enabled once RX/TX handling is
-	 * complete.
+	 * queue, otherwise, handle the condition immediately.
 	 */
 	if ((reg_val & ETH_XLNX_GEM_IXR_TX_COMPLETE_BIT) != 0) {
 		sys_write32(ETH_XLNX_GEM_IXR_TX_COMPLETE_BIT,
@@ -524,9 +529,9 @@ static int eth_xlnx_gem_start_device(const struct device *dev)
 	dev_data->started = true;
 
 	/* Disable & clear all the MAC interrupts */
-	sys_write32(ETH_XLNX_GEM_IDRCLR_MASK,
+	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK,
 		    dev_conf->base_addr + ETH_XLNX_GEM_IDR_OFFSET);
-	sys_write32(ETH_XLNX_GEM_IDRCLR_MASK,
+	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK,
 		    dev_conf->base_addr + ETH_XLNX_GEM_ISR_OFFSET);
 
 	/* Clear RX & TX status registers */
@@ -539,7 +544,7 @@ static int eth_xlnx_gem_start_device(const struct device *dev)
 	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Enable all the MAC interrupts */
-	sys_write32(ETH_XLNX_GEM_IXR_ALL_RELEVANT_MASK,
+	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK,
 		    dev_conf->base_addr + ETH_XLNX_GEM_IER_OFFSET);
 
 	/* Submit the delayed work for polling the link state */
@@ -583,9 +588,9 @@ static int eth_xlnx_gem_stop_device(const struct device *dev)
 	sys_write32(reg_val, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Disable & clear all the MAC interrupts */
-	sys_write32(ETH_XLNX_GEM_IDRCLR_MASK,
+	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK,
 		    dev_conf->base_addr + ETH_XLNX_GEM_IDR_OFFSET);
-	sys_write32(ETH_XLNX_GEM_IDRCLR_MASK,
+	sys_write32(ETH_XLNX_GEM_IXR_ALL_MASK,
 		    dev_conf->base_addr + ETH_XLNX_GEM_ISR_OFFSET);
 
 	/* Clear RX & TX status registers */
@@ -661,7 +666,7 @@ static struct net_stats_eth *eth_xlnx_gem_stats(const struct device *dev)
 {
 	struct eth_xlnx_gem_dev_data *dev_data = dev->data;
 
-	return &dev_data->stats;
+	return &data->stats;
 }
 #endif
 
@@ -682,7 +687,8 @@ static void eth_xlnx_gem_reset_hw(const struct device *dev)
 	 */
 
 	/* Clear the NWCTRL register */
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
+	sys_write32(0x00000000,
+		    dev_conf->base_addr + ETH_XLNX_GEM_NWCTRL_OFFSET);
 
 	/* Clear the statistics counters */
 	sys_write32(ETH_XLNX_GEM_STATCLR_MASK,
@@ -699,12 +705,10 @@ static void eth_xlnx_gem_reset_hw(const struct device *dev)
 		    dev_conf->base_addr + ETH_XLNX_GEM_IDR_OFFSET);
 
 	/* Clear the buffer queues */
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
-#if defined(CONFIG_SOC_XILINX_ZYNQMP)
-	/* UltraScale+ specific: clear transmit_q1_ptr */
-	sys_write32(0x00000000, dev_conf->base_addr + ETH_XLNX_GEM_TXQ1BASE_OFFSET);
-#endif
+	sys_write32(0x00000000,
+		    dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
+	sys_write32(0x00000000,
+		    dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
 }
 
 /**
@@ -824,7 +828,6 @@ static void eth_xlnx_gem_configure_clocks(const struct device *dev)
 			ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR0_SHIFT) |
 			((div1 & ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR_MASK) <<
 			ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR1_SHIFT);
-	clk_ctrl_reg |= ETH_XLNX_SLCR_GEMX_CLK_CTRL_CLKACT_BIT;
 
 	sys_write32(clk_ctrl_reg, dev_conf->clk_ctrl_reg_address);
 #endif /* CONFIG_SOC_XILINX_ZYNQMP / CONFIG_SOC_FAMILY_XILINX_ZYNQ7000 */
@@ -1255,7 +1258,6 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 
 	/* Initial configuration of the RX/TX BD rings */
 	DT_INST_FOREACH_STATUS_OKAY(ETH_XLNX_GEM_INIT_BD_RING)
-	DT_INST_FOREACH_STATUS_OKAY(ETH_XLNX_GEM_INIT_Q1_TX_BD)
 
 	/*
 	 * Set initial RX BD data -> comp. Zynq-7000 TRM, Chapter 16.3.5,
@@ -1311,35 +1313,6 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 	bdptr->addr = (uint32_t)dev_data->first_tx_buffer +
 		      (buf_iter * (uint32_t)dev_conf->tx_buffer_size);
 
-#if defined(CONFIG_SOC_XILINX_ZYNQMP)
-	/*
-	 * UltraScale+ specific: configure the one dummy TX BD to be pointed
-	 * at by the TXQ1BASE register.
-	 *
-	 * If the alternate register is *NOT* used (on real UltraScale+ hardware),
-	 * the following will happen when trying to transmit a packet:
-	 * - TX buffer descriptors pointed to by the original TXQBASE register
-	 *   can be written to as usual (length/used bit)
-	 * - When triggering the corresponding transmission in the Network Control
-	 *   Register, the start bit will not self-clear, the TX Status Register
-	 *   will indicate that a transmission is in progress, but this bit is also
-	 *   never cleared. Neither will transmission completion or a transmission
-	 *   fault ever be indicated. No error information is provided in the TX
-	 *   status register or the respective TX BD, and the TXQBASE value will
-	 *   never increment, indicating that the hardware has not moved on to
-	 *   the next TX BD.
-	 * - The status of the 'used' bit in the TX BD will not change.
-	 * - The driver will log a "TX timeout" error message, as the TX done
-	 *   semaphore k_sem_take operation will time out.
-	 *
-	 * All in all, it appears like some transmission logic state machine stalls
-	 * when TXQ1BASE is not set?
-	 */
-	dev_data->q1_txbd->ctrl = (ETH_XLNX_GEM_TXBD_WRAP_BIT |
-				   ETH_XLNX_GEM_TXBD_USED_BIT);
-	dev_data->q1_txbd->addr = 0x00000000;
-#endif
-
 	/* Set free count/current index in the RX/TX BD ring data */
 	dev_data->rxbd_ring.next_to_process = 0;
 	dev_data->rxbd_ring.next_to_use     = 0;
@@ -1353,11 +1326,6 @@ static void eth_xlnx_gem_configure_buffers(const struct device *dev)
 		    dev_conf->base_addr + ETH_XLNX_GEM_RXQBASE_OFFSET);
 	sys_write32((uint32_t)dev_data->txbd_ring.first_bd,
 		    dev_conf->base_addr + ETH_XLNX_GEM_TXQBASE_OFFSET);
-#if defined(CONFIG_SOC_XILINX_ZYNQMP)
-	/* UltraScale+ specific: use transmit_q1_ptr additionally */
-	sys_write32((uint32_t)dev_data->q1_txbd,
-		     dev_conf->base_addr + ETH_XLNX_GEM_TXQ1BASE_OFFSET);
-#endif
 }
 
 /**
@@ -1440,26 +1408,12 @@ static void eth_xlnx_gem_handle_rx_pending(const struct device *dev)
 		reg_val = sys_read32(reg_ctrl);
 		if ((reg_val & ETH_XLNX_GEM_RXBD_START_OF_FRAME_BIT) == 0) {
 			/*
-			 * Although the current BD is marked as 'used', it doesn't
-			 * contain the SOF bit.
-			 *
-			 * -> Unless we move the current RX BD pointer forward,
-			 * we'll be stuck on this invalid entry - at least until
-			 * the RX BDs wrap around to the next use of the current
-			 * RX BD entry. Clear the 'used' bit before moving on.
+			 * Although the current BD is marked as 'used', it
+			 * doesn't contain the SOF bit.
 			 */
 			LOG_ERR("%s unexpected missing SOF bit in RX BD [%u]",
 				dev->name, first_bd_idx);
-
-			reg_val = sys_read32(reg_addr);
-			reg_val &= ~ETH_XLNX_GEM_RXBD_USED_BIT;
-			sys_write32(reg_val, reg_addr);
-
-			dev_data->rxbd_ring.next_to_process =
-				(dev_data->rxbd_ring.next_to_process + 1) %
-				dev_conf->rxbd_count;
-
-			continue;
+			break;
 		}
 
 		/*
